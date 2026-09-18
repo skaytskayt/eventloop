@@ -1,0 +1,77 @@
+spring:
+  application:
+    name: eventloop
+  datasource:
+    # Порт 5433, а не 5432: compose публикует базу проекта именно туда, чтобы
+    # не конфликтовать с локально установленным Postgres. Запуск из IDE с этим
+    # значением попадает в базу контейнера — её достаточно поднять командой
+    # docker compose up -d db. Внутри контейнера значение перекрывает DB_URL.
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/eventloop}
+    username: ${DB_USER:eventloop}
+    password: ${DB_PASSWORD:eventloop}
+  jpa:
+    hibernate:
+      # Схему делает Flyway. Hibernate только сверяет — ddl-auto: update
+      # конфликтует с миграциями и порождает дрейф схемы.
+      ddl-auto: validate
+    # Транзакция на весь запрос прячет LazyInitializationException до продакшена.
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          # Mini App правится на ходу, и браузер по Last-Modified держал
+          # старую страницу со ссылками на переименованные файлы. До первого
+          # публичного деплоя статику отдаём без кеша.
+          no-store: true
+
+max:
+  bot:
+    # Без этого свойства НИ ОДНА автоконфигурация SDK не активируется,
+    # и бот молча не запустится — ошибки при этом не будет.
+    mode: ${MAX_BOT_MODE:longpolling}
+    longpolling:
+      # Токен только из окружения. В .env рядом с compose.yaml он уже лежит,
+      # поэтому запуск всё равно в одну команду — но в коде секрета нет.
+      token: ${MAX_BOT_TOKEN}
+      poll-timeout: 30
+      # Список типов намеренно не задан: пустой означает «получать все».
+      # С фильтром отсутствующий в нём тип отсекается сервером молча, и понять,
+      # почему кнопка «не работает», по логам невозможно.
+    webhook:
+      # Переключение на вебхук — смена max.bot.mode и заполнение этих полей.
+      # Требуется HTTPS на 443 и сертификат доверенного УЦ; самоподписанные запрещены.
+      token: ${MAX_BOT_TOKEN}
+      url: ${MAX_WEBHOOK_URL:}
+      secret: ${MAX_WEBHOOK_SECRET:}
+      async-dispatch: true
+
+eventloop:
+  # Два кошелька Пушкинской карты. Больше этих сумм на карте быть не может,
+  # поэтому ввод большего — почти наверняка опечатка. Меняются приказами
+  # Минкультуры, поэтому живут в конфигурации, а не в коде.
+  cinema-limit-rub: 2000
+  other-limit-rub: 3000
+  # Адрес мини-приложения: бот отдаёт на него ссылку после ввода баланса
+  # и дописывает ?cinema=&other=. Пустой — бот ответит текстом без кнопки
+  # и напишет об этом в лог.
+  miniapp-url: ${MINIAPP_URL:}
+  # Токен для POST /admin/import. Пустой — импорт по сети выключен.
+  admin-token: ${ADMIN_TOKEN:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    com.maxbot.eventLoop: INFO
