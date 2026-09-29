@@ -1,0 +1,9 @@
+# Сборка идёт внутри образа, и всё это в контекст тащить незачем:
+# target — 78 МБ, .git — 14 МБ, .planning — 4,5 МБ.
+target/
+.git/
+.planning/
+.idea/
+docs/
+.env
+*.md

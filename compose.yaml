@@ -1,0 +1,53 @@
+services:
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: eventloop
+      POSTGRES_USER: eventloop
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-eventloop}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eventloop -d eventloop"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    # Порт наружу нужен только чтобы заглянуть в базу с хоста.
+    ports:
+      - "${DB_PORT:-5433}:5432"
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/eventloop
+      DB_USER: eventloop
+      DB_PASSWORD: ${DB_PASSWORD:-eventloop}
+      # Токен берётся из .env рядом с этим файлом. Если его там нет, compose
+      # остановится с этим текстом, а не поднимет молча неработающего бота.
+      MAX_BOT_TOKEN: "${MAX_BOT_TOKEN:?не задан. Скопируйте .env.example в .env и впишите токен бота}"
+      MAX_BOT_MODE: ${MAX_BOT_MODE:-longpolling}
+      MAX_WEBHOOK_URL: ${MAX_WEBHOOK_URL:-}
+      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-}
+      # Токен для POST /admin/import. Пустой — импорт афиши по сети выключен.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-local-import}
+      # Адрес мини-приложения. Бот даёт на него ссылку после ввода баланса
+      # и дописывает ?cinema=&other=. Пустой — ответит текстом без кнопки.
+      MINIAPP_URL: ${MINIAPP_URL:-https://skaytskayt.github.io/eventloop-app/}
+    # При долгом поллинге наружу ничего публиковать не нужно:
+    # порт открыт только ради healthcheck и заглядывания в /actuator/health.
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  pgdata:
