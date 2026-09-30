@@ -37,9 +37,10 @@ services:
       MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-}
       # Токен для POST /admin/import. Пустой — импорт афиши по сети выключен.
       ADMIN_TOKEN: ${ADMIN_TOKEN:-local-import}
-      # Адрес мини-приложения. Бот даёт на него ссылку после ввода баланса
-      # и дописывает ?cinema=&other=. Пустой — ответит текстом без кнопки.
-      MINIAPP_URL: ${MINIAPP_URL:-https://skaytskayt.github.io/eventloop-app/}
+      # Username бота: после ввода баланса он присылает кнопку, открывающую
+      # своё мини-приложение, и кладёт суммы в её payload. Пустой — ответит
+      # текстом без кнопки.
+      MAX_BOT_USERNAME: ${MAX_BOT_USERNAME:-t560_hakaton_max_bot}
     # При долгом поллинге наружу ничего публиковать не нужно:
     # порт открыт только ради healthcheck и заглядывания в /actuator/health.
     ports:

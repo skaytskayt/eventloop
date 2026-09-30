@@ -47,7 +47,7 @@ class DialogRouterBalanceTest {
         when(users.findByMaxUserId(USER_ID)).thenReturn(Optional.of(user));
         when(users.save(any(AppUser.class))).thenAnswer(i -> i.getArgument(0));
 
-        AppProperties properties = new AppProperties(2000, 3000, "https://app.example/");
+        AppProperties properties = new AppProperties(2000, 3000, "test_bot");
         // Картинка приветствия грузится в MAX; в тесте её нет, и это штатный
         // случай — приветствие обязано уходить и без неё.
         WelcomeImage welcome = mock(WelcomeImage.class);
@@ -75,61 +75,84 @@ class DialogRouterBalanceTest {
     }
 
     @Test
-    @DisplayName("/start спрашивает кино и объясняет механику")
-    void startAsksCinema() {
+    @DisplayName("/start спрашивает общий баланс и объясняет механику")
+    void startAsksTotal() {
         send("/start");
-        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_CINEMA);
-        assertThat(lastCardText()).contains("на кино").contains("вправо");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_TOTAL);
+        assertThat(lastCardText()).contains("Сколько всего на карте?").contains("вправо");
     }
 
     @Test
-    @DisplayName("после кино спрашивается остальное, ссылка ещё не даётся")
-    void cinemaThenOther() {
+    @DisplayName("после общей суммы спрашивается кино, кнопка ещё не даётся")
+    void totalThenCinema() {
         send("/start");
-        send("1200");
-        assertThat(user.getCinemaRub()).isEqualTo(1200);
-        assertThat(user.getOtherRub()).isZero();
-        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_OTHER);
-        assertThat(lastText()).contains("1200").contains("остальное");
+        send("4000");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_CINEMA);
+        assertThat(lastText()).contains("4000").contains("на кино");
         verify(max, org.mockito.Mockito.never()).sendText(anyLong(), any(), org.mockito.ArgumentMatchers.notNull());
     }
 
     @Test
-    @DisplayName("обе суммы названы — приходит ссылка с ними")
-    void bothAmountsGiveTheLink() {
+    @DisplayName("обе суммы названы — остальное считается разницей, приходит кнопка мини-приложения")
+    void bothAmountsGiveTheButton() {
         send("/start");
+        send("3700");
         send("1200");
-        send("2500");
         assertThat(user.getCinemaRub()).isEqualTo(1200);
         assertThat(user.getOtherRub()).isEqualTo(2500);
         assertThat(user.getDialogState()).isEqualTo(DialogState.READY);
+        assertThat(lastText()).contains("мини-приложении").doesNotContain("Записал");
 
         ArgumentCaptor<java.util.List<java.util.List<ru.max.botapi.model.Button>>> keyboard =
                 ArgumentCaptor.forClass(java.util.List.class);
         verify(max, org.mockito.Mockito.atLeastOnce())
                 .sendText(eq(CHAT_ID), any(), keyboard.capture());
         assertThat(keyboard.getValue()).isNotNull();
-        assertThat(((ru.max.botapi.model.LinkButton) keyboard.getValue().getFirst().getFirst()).url())
-                .isEqualTo("https://app.example/?cinema=1200&other=2500");
+        var button = (ru.max.botapi.model.OpenAppButton) keyboard.getValue().getFirst().getFirst();
+        assertThat(button.webApp()).isEqualTo("test_bot");
+        assertThat(button.payload()).isEqualTo("1200_2500");
     }
 
     @Test
-    @DisplayName("сумма больше кошелька не принимается, вопрос повторяется")
-    void rejectsAmountAboveWalletLimit() {
+    @DisplayName("общая сумма больше номинала карты не принимается")
+    void rejectsTotalAboveNominal() {
         send("/start");
-        send("4000");
-        assertThat(user.getCinemaRub()).isZero();
+        send("6000");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_TOTAL);
+        assertThat(lastText()).contains("5000");
+    }
+
+    @Test
+    @DisplayName("на кино больше номинала кошелька нельзя")
+    void rejectsCinemaAboveWalletLimit() {
+        send("/start");
+        send("5000");
+        send("2500");
         assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_CINEMA);
         assertThat(lastText()).contains("2000");
     }
 
     @Test
-    @DisplayName("лимит второго кошелька свой: 2500 на кино нельзя, на остальное можно")
-    void wallletsHaveOwnLimits() {
+    @DisplayName("на кино больше, чем всего на карте, нельзя")
+    void rejectsCinemaAboveTotal() {
         send("/start");
+        send("1000");
+        send("1500");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_CINEMA);
+        assertThat(lastText()).contains("от 0 до 1000");
+    }
+
+    @Test
+    @DisplayName("остальное не влезает в свой кошелёк — кино переспрашивается")
+    void rejectsCinemaThatOverflowsOther() {
+        send("/start");
+        send("5000");
+        send("1000");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_CINEMA);
+        assertThat(lastText()).contains("от 2000 до 2000");
         send("2000");
-        send("2500");
-        assertThat(user.getOtherRub()).isEqualTo(2500);
+        assertThat(user.getCinemaRub()).isEqualTo(2000);
+        assertThat(user.getOtherRub()).isEqualTo(3000);
         assertThat(user.getDialogState()).isEqualTo(DialogState.READY);
     }
 
@@ -138,29 +161,29 @@ class DialogRouterBalanceTest {
     void garbageKeepsTheState() {
         send("/start");
         send("не помню");
-        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_CINEMA);
-        assertThat(lastText()).doesNotContain("Записал");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_TOTAL);
+        assertThat(lastText()).doesNotContain("мини-приложении");
     }
 
     @Test
-    @DisplayName("после готовности любой текст снова показывает ссылку")
-    void readyStateRepeatsTheLink() {
+    @DisplayName("после готовности любой текст снова показывает кнопку")
+    void readyStateRepeatsTheButton() {
         send("/start");
-        send("1000");
+        send("2000");
         send("1000");
         send("привет");
         assertThat(user.getDialogState()).isEqualTo(DialogState.READY);
-        assertThat(lastText()).contains("Записал");
+        assertThat(lastText()).contains("мини-приложении");
     }
 
     @Test
     @DisplayName("/start начинает заново")
     void startResetsTheConversation() {
         send("/start");
-        send("1000");
+        send("2000");
         send("1000");
         send("/start");
-        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_CINEMA);
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_TOTAL);
     }
 
     @Test

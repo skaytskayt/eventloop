@@ -4,7 +4,7 @@ import com.maxbot.eventLoop.config.AppProperties;
 import java.util.List;
 import org.springframework.stereotype.Component;
 import ru.max.botapi.model.Button;
-import ru.max.botapi.model.LinkButton;
+import ru.max.botapi.model.OpenAppButton;
 
 /**
  * Тексты и кнопки бота.
@@ -32,64 +32,74 @@ public class Screens {
                 Привет! Помогу потратить Пушкинскую карту на то, куда реально дойдёшь.
 
                 **Как это работает**
-                1. Скажешь, сколько на карте — отдельно на кино и отдельно на остальное.
+                1. Скажешь, сколько всего на карте и сколько из этого на кино.
                 2. Открою подборку мероприятий: листаешь карточки, нравится — вправо, нет — влево.
                 3. Под каждой карточкой видно цену, дату, площадку и сколько останется на карте, если пойти именно сюда.
                 4. Понравилось — жмёшь «Купить билет», попадаешь на страницу мероприятия. Вернёшься — спрошу, купил ли, и спишу с нужного кошелька.
 
                 Там же фильтры: дата, категория и сколько километров готов проехать.
 
-                Начнём с денег. **Сколько на карте на кино?** Напиши цифрами, например %d."""
-                .formatted(properties.cinemaLimitRub());
-    }
-
-    public String askCinema() {
-        return "**Сколько на карте на кино?**\n\nНапиши цифрами, например %d. Это отдельный кошелёк, до %d ₽."
-                .formatted(properties.cinemaLimitRub(), properties.cinemaLimitRub());
-    }
-
-    /** Второй вопрос. Первую сумму повторяем: её уже не видно за клавиатурой. */
-    public String askOther(int cinemaRub) {
-        return """
-                Кино: **%d ₽**.
-
-                **А сколько осталось на остальное?** Театры, музеи, концерты, экскурсии — это второй кошелёк, до %d ₽."""
-                .formatted(cinemaRub, properties.otherLimitRub());
-    }
-
-    /** Обе суммы названы — дальше человек уходит в мини-приложение. */
-    public String ready(int cinemaRub, int otherRub) {
-        return """
-                Записал: **%d ₽** на кино и **%d ₽** на остальное.
-
-                Дальше — в приложении. Там подборка мероприятий карточками, фильтры по дате, категории и расстоянию, а в профиле видно оба кошелька и всё, что уже куплено."""
-                .formatted(cinemaRub, otherRub);
+                Начнём с денег. **Сколько всего на карте?** Напиши цифрами, например %d."""
+                .formatted(properties.nominalRub());
     }
 
     /**
-     * Кнопка-ссылка на мини-приложение. Обе суммы уезжают параметрами: своего
-     * онбординга у приложения нет, и без них оно считало бы от номинала.
+     * Второй вопрос. Общую сумму повторяем: её уже не видно за клавиатурой.
+     * Сразу называем допустимый диапазон — при почти полной карте на кино
+     * не может быть мало, иначе «остальное» не влезет в свой кошелёк.
+     */
+    public String askCinema(int totalRub) {
+        return """
+                Всего на карте: **%d ₽**.
+
+                **Сколько из них на кино?** Кино — отдельный кошелёк. Напиши сумму от %d до %d ₽, остальное посчитаю сам."""
+                .formatted(totalRub, minCinema(totalRub), maxCinema(totalRub));
+    }
+
+    /** Наименьшая сумма на кино, при которой «остальное» помещается в свой кошелёк. */
+    public int minCinema(int totalRub) {
+        return Math.max(0, totalRub - properties.otherLimitRub());
+    }
+
+    /** Больше номинала кошелька и больше всей карты на кино быть не может. */
+    public int maxCinema(int totalRub) {
+        return Math.min(properties.cinemaLimitRub(), totalRub);
+    }
+
+    /** Сумма на кино не сходится с общей: объясняем, в каких пределах она может быть. */
+    public String cinemaOutOfRange(int totalRub) {
+        return "При %d ₽ на карте на кино может быть от %d до %d ₽: на кино — до %d ₽, на остальное — до %d ₽. Сколько на кино?"
+                .formatted(totalRub, minCinema(totalRub), maxCinema(totalRub),
+                        properties.cinemaLimitRub(), properties.otherLimitRub());
+    }
+
+    /** Обе суммы известны — дальше всё делается в мини-приложении. */
+    public String ready() {
+        return """
+                Готово! Дальше всё делается в мини-приложении: подборка мероприятий карточками, фильтры по дате, категории и расстоянию, а в профиле — оба кошелька и всё, что уже куплено.""";
+    }
+
+    /**
+     * Кнопка, открывающая мини-приложение бота внутри MAX. Обе суммы уезжают
+     * в payload: своего онбординга у приложения нет, и без них оно считало бы
+     * от номинала. Формат {@code <кино>_<остальное>} — MAX пропускает в payload
+     * только латиницу, цифры, «_» и «-».
      */
     public List<List<Button>> miniAppKeyboard(int cinemaRub, int otherRub) {
-        String url = miniAppUrl(cinemaRub, otherRub);
-        if (url == null) {
+        String bot = properties.botUsername();
+        if (bot == null || bot.isBlank()) {
             return null;
         }
-        return List.of(List.of(new LinkButton("🎭 Открыть подборку", url)));
+        return List.of(List.of(new OpenAppButton("🎭 Открыть подборку", bot, null,
+                miniAppPayload(cinemaRub, otherRub))));
     }
 
-    /** {@code null}, если адрес приложения не задан в конфигурации. */
-    public String miniAppUrl(int cinemaRub, int otherRub) {
-        String base = properties.miniappUrl();
-        if (base == null || base.isBlank()) {
-            return null;
-        }
-        return base + (base.contains("?") ? "&" : "?")
-                + "cinema=" + cinemaRub + "&other=" + otherRub;
+    public String miniAppPayload(int cinemaRub, int otherRub) {
+        return cinemaRub + "_" + otherRub;
     }
 
-    /** Что дописать, когда адрес приложения не настроен. */
+    /** Что дописать, когда username бота не настроен. */
     public String miniAppMissing() {
-        return "\n\n_Ссылка на приложение пока не настроена — задайте MINIAPP\\_URL._";
+        return "\n\n_Кнопка приложения пока не настроена — задайте MAX\\_BOT\\_USERNAME._";
     }
 }

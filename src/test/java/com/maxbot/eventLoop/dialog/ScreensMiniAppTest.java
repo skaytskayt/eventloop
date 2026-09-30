@@ -9,49 +9,64 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import ru.max.botapi.model.Button;
-import ru.max.botapi.model.LinkButton;
+import ru.max.botapi.model.OpenAppButton;
 
 /**
- * Ссылка на мини-приложение — единственное, ради чего теперь существует бот.
+ * Кнопка мини-приложения — единственное, ради чего теперь существует бот.
  * Если она собрана неверно, человек попадает в приложение с чужими суммами
  * или не попадает вовсе, а в чате это выглядит как «кнопка не работает».
  */
 class ScreensMiniAppTest {
 
-    private static Screens screens(String url) {
-        return new Screens(new AppProperties(2000, 3000, url));
+    private static Screens screens(String bot) {
+        return new Screens(new AppProperties(2000, 3000, bot));
     }
 
-    @ParameterizedTest(name = "{0} → {3}")
+    @ParameterizedTest(name = "{0} + {1} → {2}")
     @CsvSource({
-            "https://app.example/,           1200, 2500, https://app.example/?cinema=1200&other=2500",
-            "https://app.example/index.html, 0,    0,    https://app.example/index.html?cinema=0&other=0",
-            // У адреса уже есть параметры — дописываем через &, а не через ?.
-            "https://app.example/?v=2,       2000, 3000, https://app.example/?v=2&cinema=2000&other=3000"
+            "1200, 2500, 1200_2500",
+            "0,    0,    0_0",
+            "2000, 3000, 2000_3000"
     })
-    @DisplayName("обе суммы дописываются к адресу приложения")
-    void appendsBothWallets(String base, int cinema, int other, String expected) {
-        assertThat(screens(base).miniAppUrl(cinema, other)).isEqualTo(expected);
+    @DisplayName("обе суммы уезжают в payload символами, которые MAX пропускает")
+    void payloadCarriesBothWallets(int cinema, int other, String expected) {
+        String payload = screens("bot").miniAppPayload(cinema, other);
+        assertThat(payload).isEqualTo(expected).matches("[A-Za-z0-9_-]{1,512}");
     }
 
     @Test
-    @DisplayName("без настроенного адреса ссылки нет, и кнопки тоже")
-    void noUrlNoButton() {
-        assertThat(screens(null).miniAppUrl(1000, 1000)).isNull();
-        assertThat(screens("").miniAppUrl(1000, 1000)).isNull();
+    @DisplayName("без username бота кнопки нет")
+    void noBotNoButton() {
         assertThat(screens(null).miniAppKeyboard(1000, 1000)).isNull();
+        assertThat(screens("").miniAppKeyboard(1000, 1000)).isNull();
     }
 
     @Test
-    @DisplayName("кнопка — ссылка на приложение с обеими суммами")
-    void keyboardCarriesTheLink() {
-        List<List<Button>> keyboard = screens("https://app.example/").miniAppKeyboard(500, 1500);
+    @DisplayName("кнопка открывает мини-приложение бота с обеими суммами")
+    void keyboardOpensTheApp() {
+        List<List<Button>> keyboard = screens("test_bot").miniAppKeyboard(500, 1500);
         assertThat(keyboard).hasSize(1);
         assertThat(keyboard.getFirst()).hasSize(1);
-        assertThat(keyboard.getFirst().getFirst())
-                .isInstanceOf(LinkButton.class)
-                .extracting(b -> ((LinkButton) b).url())
-                .isEqualTo("https://app.example/?cinema=500&other=1500");
+        assertThat(keyboard.getFirst().getFirst()).isInstanceOf(OpenAppButton.class);
+        OpenAppButton button = (OpenAppButton) keyboard.getFirst().getFirst();
+        assertThat(button.text()).isEqualTo("🎭 Открыть подборку");
+        assertThat(button.webApp()).isEqualTo("test_bot");
+        assertThat(button.payload()).isEqualTo("500_1500");
+    }
+
+    @ParameterizedTest(name = "всего {0} → кино от {1} до {2}")
+    @CsvSource({
+            "5000, 2000, 2000",
+            "4000, 1000, 2000",
+            "3000, 0,    2000",
+            "1500, 0,    1500",
+            "0,    0,    0"
+    })
+    @DisplayName("диапазон суммы на кино: оба кошелька должны влезть в свои номиналы")
+    void cinemaRange(int total, int min, int max) {
+        Screens s = screens(null);
+        assertThat(s.minCinema(total)).isEqualTo(min);
+        assertThat(s.maxCinema(total)).isEqualTo(max);
     }
 
     /**
@@ -61,35 +76,44 @@ class ScreensMiniAppTest {
     @Test
     @DisplayName("приветствие объясняет механику и задаёт первый вопрос")
     void welcomeExplainsHowItWorks() {
-        String welcome = screens("https://app.example/").welcome();
+        String welcome = screens("test_bot").welcome();
         assertThat(welcome)
                 .contains("подборку")
                 .contains("вправо")
                 .contains("останется на карте")
                 .contains("Купить билет")
                 .contains("фильтры")
-                .contains("на кино");
+                .contains("на кино")
+                .contains("Сколько всего на карте?");
     }
 
     @Test
-    @DisplayName("второй вопрос повторяет уже названную сумму")
-    void secondQuestionRepeatsTheFirstAmount() {
-        assertThat(screens(null).askOther(1200))
-                .contains("1200")
-                .contains("остальное");
+    @DisplayName("второй вопрос повторяет общую сумму и называет диапазон")
+    void secondQuestionRepeatsTheTotal() {
+        assertThat(screens(null).askCinema(4000))
+                .contains("4000")
+                .contains("на кино")
+                .contains("от 1000 до 2000");
+    }
+
+    @Test
+    @DisplayName("финальное сообщение отправляет в мини-приложение, а не пересказывает суммы")
+    void readySendsToTheApp() {
+        assertThat(screens(null).ready())
+                .contains("мини-приложении")
+                .doesNotContain("Записал");
     }
 
     @Test
     @DisplayName("в текстах бота не осталось разговора про удалённое")
     void textsDoNotPromiseRemovedFeatures() {
-        Screens s = screens("https://app.example/");
-        String all = s.welcome() + s.askCinema() + s.askOther(100) + s.ready(100, 200);
+        Screens s = screens("test_bot");
+        String all = s.welcome() + s.askCinema(3000) + s.cinemaOutOfRange(5000) + s.ready();
         assertThat(all)
                 .doesNotContain("/menu")
                 .doesNotContain("/help")
                 .doesNotContain("👎")
                 .doesNotContain("Кнопки под карточкой")
                 .doesNotContain("откуда поедешь");
-        assertThat(s.ready(100, 200)).contains("100").contains("200");
     }
 }

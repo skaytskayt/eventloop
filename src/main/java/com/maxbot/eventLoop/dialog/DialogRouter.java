@@ -16,11 +16,12 @@ import ru.max.botapi.model.MessageCreatedUpdate;
 import ru.max.botapi.model.Update;
 
 /**
- * Весь диалог бота: два вопроса про деньги и ссылка на мини-приложение.
+ * Весь диалог бота: два вопроса про деньги и кнопка мини-приложения.
  *
- * <p>Кошельков два, поэтому и вопроса два. Одной суммой обойтись нельзя: где
- * именно потрачено недостающее, знает только держатель карты, и приложению
- * пришлось бы делить остаток наугад.
+ * <p>Кошельков два, поэтому и вопроса два: сколько всего на карте и сколько из
+ * этого на кино. Остальное — разница. Одной суммой обойтись нельзя: где именно
+ * потрачено недостающее, знает только держатель карты, и приложению пришлось
+ * бы делить остаток наугад.
  *
  * <p>Раньше здесь жила лента со свайпами, меню и фильтрами. Их забрало
  * мини-приложение: листать карточки в переписке медленнее, а две реализации
@@ -92,39 +93,54 @@ public class DialogRouter implements UpdateHandler {
         }
 
         switch (user.getDialogState()) {
-            case NEW, AWAITING_CINEMA -> onCinemaInput(user, chatId, text);
-            case AWAITING_OTHER -> onOtherInput(user, chatId, text);
+            case NEW, AWAITING_TOTAL -> onTotalInput(user, chatId, text);
+            case AWAITING_CINEMA -> onCinemaInput(user, chatId, text);
             // Обе суммы названы. Любой текст после этого — повод показать
-            // ссылку ещё раз, а не отчитывать за неправильную команду.
+            // кнопку ещё раз, а не отчитывать за неправильную команду.
             case READY -> sendMiniApp(user, chatId);
         }
     }
 
     private void restart(AppUser user, long chatId) {
-        user.setDialogState(DialogState.AWAITING_CINEMA);
+        user.setDialogState(DialogState.AWAITING_TOTAL);
         users.save(user);
         // Картинка только в приветствии: дальше идёт разговор про числа,
         // и иллюстрация к каждому ответу превращается в шум.
         max.sendCard(chatId, screens.welcome(), welcomeImage.photos(), null);
     }
 
-    private void onCinemaInput(AppUser user, long chatId, String text) {
-        switch (BalanceParser.parse(text, properties.cinemaLimitRub())) {
+    /**
+     * Общая сумма. Пока про кино не спросили, вся она числится в «остальном»:
+     * так её не нужно хранить отдельно, а следующий шаг переложит часть в кино.
+     */
+    private void onTotalInput(AppUser user, long chatId, String text) {
+        switch (BalanceParser.parse(text, properties.nominalRub())) {
             case BalanceParser.Result.Error error -> max.sendText(chatId, error.message(), null);
             case BalanceParser.Result.Ok ok -> {
-                user.setCinemaRub(ok.rubles());
-                user.setDialogState(DialogState.AWAITING_OTHER);
+                user.setCinemaRub(0);
+                user.setOtherRub(ok.rubles());
+                user.setDialogState(DialogState.AWAITING_CINEMA);
                 users.save(user);
-                max.sendText(chatId, screens.askOther(ok.rubles()), null);
+                max.sendText(chatId, screens.askCinema(ok.rubles()), null);
             }
         }
     }
 
-    private void onOtherInput(AppUser user, long chatId, String text) {
-        switch (BalanceParser.parse(text, properties.otherLimitRub())) {
+    /**
+     * Часть общей суммы на кино. Остальное — разница, и она обязана влезть в
+     * свой кошелёк: при 5000 ₽ на карте на кино не может быть 1000 ₽, иначе
+     * на остальное вышло бы 4000 при номинале 3000.
+     */
+    private void onCinemaInput(AppUser user, long chatId, String text) {
+        int total = user.getOtherRub();
+        switch (BalanceParser.parse(text, properties.cinemaLimitRub())) {
             case BalanceParser.Result.Error error -> max.sendText(chatId, error.message(), null);
+            case BalanceParser.Result.Ok ok when ok.rubles() < screens.minCinema(total)
+                    || ok.rubles() > screens.maxCinema(total) ->
+                    max.sendText(chatId, screens.cinemaOutOfRange(total), null);
             case BalanceParser.Result.Ok ok -> {
-                user.setOtherRub(ok.rubles());
+                user.setCinemaRub(ok.rubles());
+                user.setOtherRub(total - ok.rubles());
                 user.setDialogState(DialogState.READY);
                 users.save(user);
                 sendMiniApp(user, chatId);
@@ -133,16 +149,16 @@ public class DialogRouter implements UpdateHandler {
     }
 
     /**
-     * Единственный экран после обоих вопросов. Если адрес приложения не задан,
+     * Единственный экран после обоих вопросов. Если username бота не задан,
      * человек всё равно получает ответ, а не тишину — и видно, что чинить.
      */
     private void sendMiniApp(AppUser user, long chatId) {
         int cinema = user.getCinemaRub();
         int other = user.getOtherRub();
         var keyboard = screens.miniAppKeyboard(cinema, other);
-        String text = screens.ready(cinema, other);
+        String text = screens.ready();
         if (keyboard == null) {
-            log.warn("Адрес мини-приложения не задан (eventloop.miniapp-url) — отправляю без кнопки");
+            log.warn("Username бота не задан (eventloop.bot-username) — отправляю без кнопки");
             text = text + screens.miniAppMissing();
         }
         max.sendText(chatId, text, keyboard);

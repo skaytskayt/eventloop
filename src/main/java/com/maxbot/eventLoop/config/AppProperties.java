@@ -6,14 +6,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Настройки бота.
  *
  * <p>Номиналы кошельков меняются приказами Минкультуры — держим в конфигурации,
- * а не в коде. Адрес мини-приложения приходит переменной окружения: он разный
- * у разработки и у демо, и в репозитории ему делать нечего.
+ * а не в коде. Username бота, чьё мини-приложение открывает кнопка, приходит
+ * переменной окружения: бот у разработки и у демо может быть разный.
  */
 @ConfigurationProperties(prefix = "eventloop")
 public record AppProperties(
         int cinemaLimitRub,
         int otherLimitRub,
-        String miniappUrl
+        String botUsername
 ) {
 
     public AppProperties {

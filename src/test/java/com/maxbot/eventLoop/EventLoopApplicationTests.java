@@ -35,27 +35,27 @@ class EventLoopApplicationTests {
         runner.withPropertyValues(
                         "eventloop.cinema-limit-rub=2000",
                         "eventloop.other-limit-rub=3000",
-                        "eventloop.miniapp-url=https://example.test/app/")
+                        "eventloop.bot-username=test_bot")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     AppProperties props = context.getBean(AppProperties.class);
                     assertThat(props.cinemaLimitRub()).isEqualTo(2000);
                     assertThat(props.otherLimitRub()).isEqualTo(3000);
                     assertThat(props.nominalRub()).isEqualTo(5000);
-                    assertThat(props.miniappUrl()).isEqualTo("https://example.test/app/");
+                    assertThat(props.botUsername()).isEqualTo("test_bot");
                 });
     }
 
-    /** Адрес приложения не обязателен: бот должен подниматься и без него. */
+    /** Username бота не обязателен: бот должен подниматься и без него. */
     @Test
-    @DisplayName("без адреса мини-приложения контекст поднимается")
-    void miniAppUrlIsOptional() {
+    @DisplayName("без username бота контекст поднимается")
+    void botUsernameIsOptional() {
         runner.withPropertyValues(
                         "eventloop.cinema-limit-rub=2000",
                         "eventloop.other-limit-rub=3000")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    assertThat(context.getBean(AppProperties.class).miniappUrl()).isNull();
+                    assertThat(context.getBean(AppProperties.class).botUsername()).isNull();
                 });
     }
 
