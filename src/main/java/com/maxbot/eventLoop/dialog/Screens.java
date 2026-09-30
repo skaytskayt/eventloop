@@ -45,15 +45,13 @@ public class Screens {
 
     /**
      * Второй вопрос. Общую сумму повторяем: её уже не видно за клавиатурой.
-     * Сразу называем допустимый диапазон — при почти полной карте на кино
-     * не может быть мало, иначе «остальное» не влезет в свой кошелёк.
      */
     public String askCinema(int totalRub) {
         return """
                 Всего на карте: **%d ₽**.
 
-                **Сколько из них на кино?** Кино — отдельный кошелёк. Напиши сумму от %d до %d ₽, остальное посчитаю сам."""
-                .formatted(totalRub, minCinema(totalRub), maxCinema(totalRub));
+                **Сколько из них на кино?** Кино — отдельный кошелёк. Напиши сумму до %d ₽, остальное посчитаю сам."""
+                .formatted(totalRub, maxCinema(totalRub));
     }
 
     /** Наименьшая сумма на кино, при которой «остальное» помещается в свой кошелёк. */
@@ -66,11 +64,18 @@ public class Screens {
         return Math.min(properties.cinemaLimitRub(), totalRub);
     }
 
-    /** Сумма на кино не сходится с общей: объясняем, в каких пределах она может быть. */
+    /**
+     * Сумма на кино не сходится с общей: объясняем, в каких пределах она может
+     * быть. Когда подходит ровно одна сумма, называем её, а не «от X до X».
+     */
     public String cinemaOutOfRange(int totalRub) {
-        return "При %d ₽ на карте на кино может быть от %d до %d ₽: на кино — до %d ₽, на остальное — до %d ₽. Сколько на кино?"
-                .formatted(totalRub, minCinema(totalRub), maxCinema(totalRub),
-                        properties.cinemaLimitRub(), properties.otherLimitRub());
+        int min = minCinema(totalRub);
+        int max = maxCinema(totalRub);
+        String range = min == max ? "только %d ₽".formatted(max)
+                : min == 0 ? "не больше %d ₽".formatted(max)
+                : "от %d до %d ₽".formatted(min, max);
+        return "При %d ₽ на карте на кино может быть %s: на кино — до %d ₽, на остальное — до %d ₽. Сколько на кино?"
+                .formatted(totalRub, range, properties.cinemaLimitRub(), properties.otherLimitRub());
     }
 
     /** Обе суммы известны — дальше всё делается в мини-приложении. */

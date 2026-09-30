@@ -88,12 +88,25 @@ class ScreensMiniAppTest {
     }
 
     @Test
-    @DisplayName("второй вопрос повторяет общую сумму и называет диапазон")
+    @DisplayName("второй вопрос повторяет общую сумму и называет потолок на кино")
     void secondQuestionRepeatsTheTotal() {
-        assertThat(screens(null).askCinema(4000))
-                .contains("4000")
-                .contains("на кино")
-                .contains("от 1000 до 2000");
+        assertThat(screens(null).askCinema(5000))
+                .contains("Всего на карте: **5000 ₽**")
+                .contains("Напиши сумму до 2000 ₽, остальное посчитаю сам.");
+        assertThat(screens(null).askCinema(1000)).contains("до 1000 ₽");
+    }
+
+    @ParameterizedTest(name = "всего {0} → «{1}»")
+    @CsvSource(delimiter = '|', value = {
+            "5000 | только 2000 ₽",
+            "4000 | от 1000 до 2000 ₽",
+            "1000 | не больше 1000 ₽"
+    })
+    @DisplayName("подсказка при неверной сумме на кино не пишет «от X до X»")
+    void outOfRangeHint(int total, String expected) {
+        assertThat(screens(null).cinemaOutOfRange(total))
+                .contains(expected)
+                .doesNotContainPattern("от (\\d+) до \\1 ");
     }
 
     @Test

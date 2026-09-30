@@ -139,7 +139,7 @@ class DialogRouterBalanceTest {
         send("1000");
         send("1500");
         assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_CINEMA);
-        assertThat(lastText()).contains("от 0 до 1000");
+        assertThat(lastText()).contains("не больше 1000 ₽");
     }
 
     @Test
@@ -149,7 +149,7 @@ class DialogRouterBalanceTest {
         send("5000");
         send("1000");
         assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_CINEMA);
-        assertThat(lastText()).contains("от 2000 до 2000");
+        assertThat(lastText()).contains("только 2000 ₽");
         send("2000");
         assertThat(user.getCinemaRub()).isEqualTo(2000);
         assertThat(user.getOtherRub()).isEqualTo(3000);
