@@ -3,6 +3,7 @@ package com.maxbot.eventLoop.data;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.maxbot.eventLoop.domain.Category;
+import com.maxbot.eventLoop.geo.Haversine;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -24,6 +25,10 @@ import org.junit.jupiter.api.Test;
  * в пути даёт не исключение, а пустой прямоугольник на карточке — заметить его
  * можно только долистав до неё. Этим и занимается тест.
  *
+ * <p>Теперь {@code data.js} собирает скрипт {@code tools/feed/build-feed.mjs}, а не
+ * человек, но проверка нужна по той же причине: скрипт пишет то, что отдал
+ * источник, и битая площадка или пропавшая афиша так же не видна глазом.
+ *
  * <p>JS-раннера в проекте нет, поэтому {@code data.js} разбирается регулярками.
  * Это годится ровно потому, что файл писался по одному шаблону: он данные, а
  * не программа.
@@ -33,7 +38,17 @@ class MiniAppDatasetTest {
     private static final Path APP = Path.of("src", "main", "resources", "static", "app");
 
     private record Card(int sessionId, int eventId, String title, String category,
-                        String photo, int priceRub, String ticketUrl, String eventUrl) {
+                        String photo, int priceRub, String ticketUrl, String eventUrl,
+                        String city, double venueLat, double venueLon, String startsAt) {
+    }
+
+    /** Центры городов — те же, что в app.js (CITIES) и Screens (ORIGINS). */
+    private static final double[] MOSCOW = {55.7558, 37.6173};
+    private static final double[] KAZAN = {55.7961, 49.1064};
+
+    /** Хост оператора у каждого города свой: казанская афиша живёт на поддомене. */
+    private static String hostOf(String city) {
+        return "kazan".equals(city) ? "https://kzn.ticketland.ru/" : "https://www.ticketland.ru/";
     }
 
     private static List<Card> cards;
@@ -54,7 +69,11 @@ class MiniAppDatasetTest {
                     quoted(body, "photo"),
                     Integer.parseInt(field(body, "priceRub")),
                     quoted(body, "ticketUrl"),
-                    quoted(body, "eventUrl")));
+                    quoted(body, "eventUrl"),
+                    quoted(body, "city"),
+                    Double.parseDouble(field(body, "venueLat")),
+                    Double.parseDouble(field(body, "venueLon")),
+                    quoted(body, "startsAt")));
         }
     }
 
@@ -131,16 +150,54 @@ class MiniAppDatasetTest {
     @DisplayName("ссылка ведёт на страницу мероприятия у оператора")
     void everyCardLinksToItsEventPage() {
         assertThat(cards).allSatisfy(card -> {
+            String host = hostOf(card.city());
             assertThat(card.ticketUrl())
                     .as("ссылка карточки «%s»", card.title())
-                    .startsWith("https://www.ticketland.ru/")
+                    .startsWith(host)
                     .endsWith("/")
                     .doesNotContain("?");
             // Путь вида /раздел/площадка/мероприятие/ — три сегмента.
-            assertThat(card.ticketUrl().replace("https://www.ticketland.ru/", "").split("/"))
+            assertThat(card.ticketUrl().substring(host.length()).split("/"))
                     .as("путь карточки «%s»", card.title())
                     .hasSize(3);
         });
+    }
+
+    @Test
+    @DisplayName("у каждой карточки известный город")
+    void everyCardHasKnownCity() {
+        assertThat(cards).extracting(Card::city).containsOnly("moscow", "kazan");
+    }
+
+    /**
+     * Координаты дал геокодер или человек. Промах геокодера — это площадка в
+     * соседнем городе с тем же названием, и в ленте она выглядит как «до неё
+     * 700 км». Порог 60 км пропускает Красногорск и Мытищи, но не ошибку.
+     */
+    @Test
+    @DisplayName("площадка не дальше 60 км от центра своего города")
+    void everyVenueIsNearItsCity() {
+        assertThat(cards).allSatisfy(card -> {
+            double[] center = "kazan".equals(card.city()) ? KAZAN : MOSCOW;
+            assertThat(Haversine.distanceKm(center[0], center[1], card.venueLat(), card.venueLon()))
+                    .as("площадка карточки «%s»", card.title())
+                    .isLessThanOrEqualTo(60.0);
+        });
+    }
+
+    /** Даты в ISO, поэтому строки сравниваются лексикографически. */
+    @Test
+    @DisplayName("в Казани к демо 2026-10-29 не меньше 30 мероприятий")
+    void kazanHasEnoughEventsForDemo() {
+        assertThat(cards)
+                .filteredOn(card -> "kazan".equals(card.city()) && card.startsAt().compareTo("2026-10-29") >= 0)
+                .hasSizeGreaterThanOrEqualTo(30);
+    }
+
+    @Test
+    @DisplayName("в Москве не меньше 30 мероприятий")
+    void moscowHasEnoughEvents() {
+        assertThat(cards).filteredOn(card -> "moscow".equals(card.city())).hasSizeGreaterThanOrEqualTo(30);
     }
 
     @Test
