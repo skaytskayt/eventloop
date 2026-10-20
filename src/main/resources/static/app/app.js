@@ -3,12 +3,27 @@
  *
  * Разметка строится узлами через DOM API. HTML-строки не используются осознанно:
  * на следующем шаге в эти же поля приедут данные с сервера, и склейка строк
- * стала бы дырой. Состояние живёт в localStorage до появления серверной синхронизации.
+ * стала бы дырой. Состояние живёт в localStorage, а при открытии из MAX ещё и
+ * на сервере — тогда источник истины сервер, а localStorage только кеш.
  */
 (function () {
   'use strict';
 
   var KEY = 'eventloop.miniapp.v2';
+  // Адрес бэкенда из meta eventloop-api. Пусто — тот же адрес, что у приложения.
+  var API = (function () {
+    var m = document.querySelector('meta[name="eventloop-api"]');
+    return m ? (m.getAttribute('content') || '').replace(/\/+$/, '') : '';
+  })();
+  // Подписанный initData есть, только когда приложение открыто внутри MAX.
+  // Без него сервер не узнает, чьи это отметки, и в /api не уходит ничего.
+  var INIT = (function () {
+    try {
+      var d = window.WebApp && window.WebApp.initData;
+      if (typeof d === 'string' && d) { return d; }
+    } catch (e) { /* моста нет — открыто не из MAX */ }
+    return '';
+  })();
   var SVG = 'http://www.w3.org/2000/svg';
   var XLINK = 'http://www.w3.org/1999/xlink';
 
@@ -229,8 +244,70 @@
     return loadFeed().filter(fits);
   }
 
+  /* Колода по вкусу: сверху то, что похоже на уже отмеченное. Без истории —
+   * исходный порядок, иначе первая же подборка выглядела бы случайной. */
   function deck() {
-    return pool().filter(function (e) { return !marked(e.eventId); });
+    var list = pool().filter(function (e) { return !marked(e.eventId); });
+    var refs = anchors();
+    if (!refs.length) { return list; }
+    var scored = list.map(function (e, i) { return { item: e, i: i, score: taste(e, refs).score }; });
+    // Равные — по исходному индексу явно: стабильность sort в старых
+    // WebView не гарантирована.
+    scored.sort(function (a, b) { return b.score - a.score || a.i - b.i; });
+    return scored.map(function (s) { return s.item; });
+  }
+
+  // За что кандидат похож на опорное событие. Категория весит больше всего:
+  // кто лайкнул три спектакля, хочет театр, а не просто что-то рядом.
+  var TASTE = { category: 3, venue: 2, price: 1, distance: 1 };
+  // Вклад опорного события: «Пойду» и покупка — явный вкус, отложенное —
+  // полусогласие, дизлайк тянет похожее вниз.
+  var WEIGHT = { liked: 1, bought: 1, saved: 0.5, disliked: -1 };
+
+  function anchors() {
+    var out = [];
+    function add(ids, kind) {
+      ids.forEach(function (id) {
+        var e = byEventId(id);
+        if (e) { out.push({ item: e, kind: kind, weight: WEIGHT[kind] }); }
+      });
+    }
+    add(state.liked, 'liked');
+    add(state.bought.map(function (b) { return b.eventId; }), 'bought');
+    add(state.saved, 'saved');
+    add(state.disliked, 'disliked');
+    return out;
+  }
+
+  function likeness(a, b) {
+    var s = 0;
+    if (a.category === b.category) { s += TASTE.category; }
+    if (a.venueName === b.venueName) { s += TASTE.venue; }
+    if (Math.abs(a.priceRub - b.priceRub) <= 0.3 * b.priceRub) { s += TASTE.price; }
+    if (Math.abs(a.distanceKm - b.distanceKm) <= 2) { s += TASTE.distance; }
+    return s;
+  }
+
+  /* Счёт кандидата и событие, которое внесло в него больше всего. Объяснять
+   * выбор можно только тем, что человеку понравилось, поэтому because —
+   * только из «Пойду» и купленного. */
+  function taste(item, refs) {
+    var score = 0, best = 0, because = null;
+    (refs || anchors()).forEach(function (r) {
+      var part = r.weight * likeness(item, r.item);
+      score += part;
+      if ((r.kind === 'liked' || r.kind === 'bought') && part > best) {
+        best = part;
+        because = r.item;
+      }
+    });
+    return { score: score, because: because };
+  }
+
+  function becauseLine(item) {
+    var t = taste(item);
+    if (t.score <= 0 || !t.because) { return null; }
+    return el('p', 'because', 'Потому что тебе понравилось «' + t.because.title + '»');
   }
 
   function fits(e) {
@@ -285,6 +362,74 @@
     state.saved = state.saved.filter(function (x) { return x !== id; });
     state.disliked = state.disliked.filter(function (x) { return x !== id; });
     save();
+  }
+
+  /* ---- Синхронизация с сервером ----------------------------------------
+   * Только при открытии из MAX: без подписанного initData ни одного запроса
+   * к /api не уходит. Ответа интерфейс не ждёт — сеть может отвалиться,
+   * а свайп должен оставаться мгновенным. */
+  var NEUTRAL = { VIEW: true, CLICK_BUY: true, PURCHASE_NO: true };
+  // Было ли с запуска действие, меняющее отметки. Тогда ответ pull() уже
+  // устарел и применять его нельзя — откатил бы только что сделанную оценку.
+  var touched = false;
+  var seen = {};
+
+  function send(action, eventId) {
+    if (!INIT) { return; }
+    var item = byEventId(eventId);
+    if (!item) { return; }
+    if (!NEUTRAL[action]) { touched = true; }
+    try {
+      fetch(API + '/api/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Init-Data': INIT },
+        body: JSON.stringify({ eventId: item.eventId, action: action, priceRub: item.priceRub, category: item.category }),
+        // «Купить билет» уводит на сайт кассы — запрос должен это пережить.
+        keepalive: true
+      }).catch(function () { /* сеть — не повод мешать свайпу */ });
+    } catch (e) { /* WebView без fetch — работаем на localStorage */ }
+  }
+
+  // Просмотр считается один раз за сессию: перерисовки не должны раздувать воронку.
+  function viewed(item) {
+    if (seen[item.eventId]) { return; }
+    seen[item.eventId] = true;
+    send('VIEW', item.eventId);
+  }
+
+  function pull() {
+    if (!INIT) { return; }
+    try {
+      fetch(API + '/api/me/reactions', { headers: { 'X-Init-Data': INIT } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(applyServer)
+        .catch(function () { /* нет связи — остаётся локальное */ });
+    } catch (e) { /* WebView без fetch */ }
+  }
+
+  /* Сервер — источник истины, но пустой ответ локальное не стирает: первый
+   * запуск после обновления не должен терять прежнюю историю браузера.
+   * Ответ — внешние данные, поэтому битые записи пропускаются. Ожидающий
+   * вопрос о покупке, фильтры, кошельки и стопка undo остаются как были. */
+  function applyServer(list) {
+    if (!Array.isArray(list) || !list.length || touched) { return; }
+    var lists = { LIKED: 'liked', SAVED: 'saved', DISLIKED: 'disliked' };
+    var fresh = { liked: [], saved: [], disliked: [], bought: [] };
+    list.forEach(function (r) {
+      if (!r || typeof r.eventId !== 'number') { return; }
+      if (lists[r.kind]) {
+        fresh[lists[r.kind]].push(r.eventId);
+      } else if (r.kind === 'BOUGHT') {
+        var b = { eventId: r.eventId, priceRub: r.priceRub, wallet: walletOf(r.category), at: r.at };
+        if (validPurchase(b)) { fresh.bought.push(b); }
+      }
+    });
+    state.liked = fresh.liked;
+    state.saved = fresh.saved;
+    state.disliked = fresh.disliked;
+    state.bought = fresh.bought;
+    save();
+    render();
   }
 
   function go(screen) {
@@ -369,10 +514,13 @@
     disliked: 'Скрыли из подборки'
   };
 
+  var ACTION = { liked: 'LIKE', saved: 'SAVE', disliked: 'DISLIKE' };
+
   function react(item, kind) {
     state.undo.push(item.eventId);
     if (state.undo.length > 30) { state.undo.shift(); }
     mark(item, kind);
+    send(ACTION[kind], item.eventId);
     if (state.index >= deck().length) { state.index = 0; }
     if (state.screen === 'screen-detail') {
       // Открытая карточка — единственное место, где оценка ничего не меняла на
@@ -578,6 +726,8 @@
     document.getElementById('feed-bar').style.width = Math.round(shown / total * 100) + '%';
 
     var item = list[state.index];
+    // render() рисует подборку и под приветствием — просмотр только на её экране.
+    if (state.screen === 'screen-feed') { viewed(item); }
     var card = el('article', 'bigcard');
 
     var ph = photo(item, 'bigcard__photo');
@@ -587,6 +737,8 @@
     var body = el('div', 'bigcard__body');
     body.appendChild(el('span', 'badge', Cat.title(item.category)));
     body.appendChild(el('h2', 'card__title', item.title));
+    var why = becauseLine(item);
+    if (why) { body.appendChild(why); }
     body.appendChild(metaRow('calendar', whenText(item.startsAt)));
     body.appendChild(metaRow('pin', item.venueName));
     body.appendChild(priceBlock(item, false));
@@ -635,6 +787,7 @@
 
     if (state.index >= list.length) { state.index = 0; }
     var item = list[state.index];
+    if (state.screen === 'screen-swipe') { viewed(item); }
     var total = pool().length;
     var shown = total - list.length + state.index + 1;
 
@@ -648,6 +801,8 @@
     var over = el('div', 'swipecard__over');
     over.appendChild(el('span', 'badge', Cat.title(item.category)));
     over.appendChild(el('h2', 'card__title', item.title));
+    var why = becauseLine(item);
+    if (why) { over.appendChild(why); }
     over.appendChild(metaRow('calendar', whenText(item.startsAt)));
     over.appendChild(metaRow('pin', item.venueName));
     ph.appendChild(over);
@@ -738,6 +893,7 @@
     var id = state.undo.pop();
     if (id === undefined) { return; }
     forget(id);
+    send('UNDO', id);
     var list = deck();
     for (var i = 0; i < list.length; i++) {
       if (list[i].eventId === id) { state.index = i; break; }
@@ -804,6 +960,7 @@
         buy.addEventListener('click', function () {
           state.pending = item.eventId;
           save();
+          send('CLICK_BUY', item.eventId);
         });
         main.appendChild(buy);
       }
@@ -831,7 +988,13 @@
         }
         row.classList.add('is-leaving');
         setTimeout(function () {
-          if (liked) { forget(item.eventId); } else { mark(item, 'liked'); }
+          if (liked) {
+            forget(item.eventId);
+            send('UNDO', item.eventId);
+          } else {
+            mark(item, 'liked');
+            send('LIKE', item.eventId);
+          }
           render();
           // Карточка уезжает с текущей вкладки, а появляется на соседней,
           // и переключать вкладку под человеком во время разбора списка
@@ -1024,11 +1187,19 @@
     closeAsk();
   }
 
+  // «Ещё нет» — ответ для воронки. clearPending() зовут и там, где это не
+  // отказ (вопрос не к месту, покупка подтверждена), поэтому отдельно.
+  function declinePurchase() {
+    if (state.pending !== null) { send('PURCHASE_NO', state.pending); }
+    clearPending();
+  }
+
   function confirmPurchase() {
     var item = state.pending === null ? null : byEventId(state.pending);
     if (!item) { clearPending(); return; }
     var w = walletOf(item.category);
     state.bought.push({ eventId: item.eventId, priceRub: item.priceRub, wallet: w, at: Date.now() });
+    send('PURCHASE_YES', item.eventId);
     // Купленное уходит из «Пойду» в «Куплено»: в двух местах сразу
     // оно выглядело бы как два разных дела.
     forget(item.eventId);
@@ -1043,6 +1214,7 @@
     var before = state.bought.length;
     state.bought = state.bought.filter(function (b) { return b.eventId !== eventId; });
     if (state.bought.length === before) { return; }
+    send('PURCHASE_CANCEL', eventId);
     if (state.liked.indexOf(eventId) < 0) { state.liked.push(eventId); }
     save();
     toast('Покупка отменена');
@@ -1350,14 +1522,14 @@
   document.getElementById('tab-saved').addEventListener('click', function () { state.tab = 'saved'; render(); });
 
   document.getElementById('ask-yes').addEventListener('click', confirmPurchase);
-  document.getElementById('ask-no').addEventListener('click', clearPending);
+  document.getElementById('ask-no').addEventListener('click', declinePurchase);
   // Нажатие мимо окна и Esc считаем за «ещё нет»: молча списать деньги
   // с того, кто закрыл вопрос, нельзя.
   document.getElementById('ask').addEventListener('click', function (e) {
-    if (e.target === e.currentTarget) { clearPending(); }
+    if (e.target === e.currentTarget) { declinePurchase(); }
   });
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && !document.getElementById('ask').hidden) { clearPending(); }
+    if (e.key === 'Escape' && !document.getElementById('ask').hidden) { declinePurchase(); }
   });
 
   // Спрашиваем только после настоящей отлучки. Без флага вопрос выскочил бы
@@ -1383,4 +1555,6 @@
   render();
   // Вкладку могли закрыть, не ответив: незаданный вопрос ждёт в хранилище.
   askPurchase();
+  // Отметки с сервера — после первой отрисовки: локальный кеш показываем сразу.
+  pull();
 })();
