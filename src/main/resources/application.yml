@@ -61,6 +61,10 @@ eventloop:
   bot-username: ${MAX_BOT_USERNAME:}
   # Токен для POST /admin/import. Пустой — импорт по сети выключен.
   admin-token: ${ADMIN_TOKEN:}
+  # Откуда Mini App может ходить в /api через CORS. Нужен копии приложения
+  # на GitHub Pages; когда приложение раздаёт сам бэкенд по /app/, это тот же
+  # origin и список не участвует. Несколько адресов — через запятую.
+  miniapp-origins: ${MINIAPP_ORIGINS:https://skaytskayt.github.io}
 
 management:
   endpoints:
