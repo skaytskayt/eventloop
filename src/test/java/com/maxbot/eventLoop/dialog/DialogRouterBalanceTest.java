@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 /**
- * Двухшаговый разговор про деньги — всё, что бот умеет. Ошибка здесь не падает
+ * Разговор бота: две суммы и точка отсчёта — всё, что бот умеет. Ошибка здесь не падает
  * исключением: человек просто застревает на вопросе или уходит в приложение
  * с чужой суммой.
  *
@@ -67,6 +67,31 @@ class DialogRouterBalanceTest {
     }
 
     /** Приветствие уходит картинкой, остальные реплики — текстом. */
+    private void sendLocation(double lat, double lon) {
+        router.onUpdate(TestUpdates.location(USER_ID, CHAT_ID, lat, lon));
+    }
+
+    @SuppressWarnings("unchecked")
+    private java.util.List<java.util.List<ru.max.botapi.model.Button>> lastKeyboard() {
+        ArgumentCaptor<java.util.List<java.util.List<ru.max.botapi.model.Button>>> keyboard =
+                ArgumentCaptor.forClass(java.util.List.class);
+        verify(max, org.mockito.Mockito.atLeastOnce())
+                .sendText(eq(CHAT_ID), any(), keyboard.capture());
+        return keyboard.getValue();
+    }
+
+    private String lastPayload() {
+        var button = (ru.max.botapi.model.OpenAppButton) lastKeyboard().getFirst().getFirst();
+        return button.payload();
+    }
+
+    /** До вопроса о точке: обе суммы названы. */
+    private void untilOrigin() {
+        send("/start");
+        send("3700");
+        send("1200");
+    }
+
     private String lastCardText() {
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(max, org.mockito.Mockito.atLeastOnce())
@@ -100,6 +125,8 @@ class DialogRouterBalanceTest {
         send("1200");
         assertThat(user.getCinemaRub()).isEqualTo(1200);
         assertThat(user.getOtherRub()).isEqualTo(2500);
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_ORIGIN);
+        send("Пропустить");
         assertThat(user.getDialogState()).isEqualTo(DialogState.READY);
         assertThat(lastText()).contains("мини-приложении").doesNotContain("Записал");
 
@@ -153,7 +180,7 @@ class DialogRouterBalanceTest {
         send("2000");
         assertThat(user.getCinemaRub()).isEqualTo(2000);
         assertThat(user.getOtherRub()).isEqualTo(3000);
-        assertThat(user.getDialogState()).isEqualTo(DialogState.READY);
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_ORIGIN);
     }
 
     @Test
@@ -171,9 +198,97 @@ class DialogRouterBalanceTest {
         send("/start");
         send("2000");
         send("1000");
+        send("Пропустить");
         send("привет");
         assertThat(user.getDialogState()).isEqualTo(DialogState.READY);
         assertThat(lastText()).contains("мини-приложении");
+    }
+
+    @Test
+    @DisplayName("после суммы на кино спрашивается точка отсчёта: геолокация, точки городов и «Пропустить»")
+    void cinemaThenOriginQuestion() {
+        untilOrigin();
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_ORIGIN);
+        assertThat(lastText()).contains("расстояние");
+        var keyboard = lastKeyboard();
+        assertThat(keyboard.getFirst().getFirst()).isInstanceOf(ru.max.botapi.model.RequestGeoLocationButton.class);
+        var names = keyboard.stream().skip(1).flatMap(java.util.List::stream)
+                .map(b -> ((ru.max.botapi.model.MessageButton) b).text()).toList();
+        assertThat(names).containsAll(Screens.ORIGINS.stream().map(Screens.Origin::name).toList())
+                .contains("Пропустить");
+    }
+
+    @Test
+    @DisplayName("точка кнопкой — сохраняется, кнопка приложения несёт её координаты")
+    void originByButton() {
+        untilOrigin();
+        send("Казань · центр");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.READY);
+        assertThat(user.getOriginName()).isEqualTo("Казань · центр");
+        assertThat(user.getOriginLat()).isEqualTo(55.7961);
+        assertThat(user.getOriginLon()).isEqualTo(49.1064);
+        assertThat(lastPayload()).isEqualTo("1200_2500_557961_491064");
+        assertThat(lastText()).contains("Казань · центр");
+    }
+
+    @Test
+    @DisplayName("геолокация — сохраняется как «По геолокации», координаты в payload")
+    void originByLocation() {
+        untilOrigin();
+        sendLocation(55.79, 49.12);
+        assertThat(user.getDialogState()).isEqualTo(DialogState.READY);
+        assertThat(user.getOriginName()).isEqualTo("По геолокации");
+        assertThat(lastPayload()).isEqualTo("1200_2500_557900_491200");
+    }
+
+    @Test
+    @DisplayName("геолокация далеко от обоих городов — точкой становится центр ближайшего")
+    void farLocationFallsBackToNearestCenter() {
+        untilOrigin();
+        sendLocation(54.7388, 55.9721);
+        assertThat(user.getOriginName()).isEqualTo("Казань · центр");
+        assertThat(user.getOriginLat()).isEqualTo(55.7961);
+        assertThat(user.getOriginLon()).isEqualTo(49.1064);
+        assertThat(lastPayload()).isEqualTo("1200_2500_557961_491064");
+    }
+
+    @Test
+    @DisplayName("«Пропустить» — точки нет, payload прежнего вида")
+    void skipOrigin() {
+        untilOrigin();
+        send("Пропустить");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.READY);
+        assertThat(user.getOriginName()).isNull();
+        assertThat(user.getOriginLat()).isNull();
+        assertThat(lastPayload()).isEqualTo("1200_2500");
+        assertThat(lastText()).contains("от центра Москвы");
+    }
+
+    @Test
+    @DisplayName("непонятный ответ на вопрос о точке — вопрос повторяется")
+    void garbageOriginRepeatsTheQuestion() {
+        untilOrigin();
+        send("где-то тут");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_ORIGIN);
+        assertThat(lastKeyboard().getFirst().getFirst())
+                .isInstanceOf(ru.max.botapi.model.RequestGeoLocationButton.class);
+    }
+
+    @Test
+    @DisplayName("после готовности точку можно сменить кнопкой или геолокацией")
+    void readyStateChangesOrigin() {
+        untilOrigin();
+        send("Пропустить");
+        send("Москва · м. ВДНХ");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.READY);
+        assertThat(user.getOriginName()).isEqualTo("Москва · м. ВДНХ");
+        assertThat(lastPayload()).isEqualTo("1200_2500_558196_376408");
+        sendLocation(55.79, 49.12);
+        assertThat(user.getOriginName()).isEqualTo("По геолокации");
+        assertThat(lastPayload()).isEqualTo("1200_2500_557900_491200");
+        send("привет");
+        assertThat(user.getOriginName()).isEqualTo("По геолокации");
+        assertThat(lastPayload()).isEqualTo("1200_2500_557900_491200");
     }
 
     @Test

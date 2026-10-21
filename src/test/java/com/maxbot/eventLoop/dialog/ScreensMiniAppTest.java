@@ -9,7 +9,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import ru.max.botapi.model.Button;
+import ru.max.botapi.model.MessageButton;
 import ru.max.botapi.model.OpenAppButton;
+import ru.max.botapi.model.RequestGeoLocationButton;
 
 /**
  * Кнопка мини-приложения — единственное, ради чего теперь существует бот.
@@ -32,6 +34,36 @@ class ScreensMiniAppTest {
     void payloadCarriesBothWallets(int cinema, int other, String expected) {
         String payload = screens("bot").miniAppPayload(cinema, other);
         assertThat(payload).isEqualTo(expected).matches("[A-Za-z0-9_-]{1,512}");
+    }
+
+    @ParameterizedTest(name = "{0} + {1} @ {2},{3} → {4}")
+    @CsvSource({
+            "1200, 2500, 55.7961, 49.1064, 1200_2500_557961_491064",
+            "2000, 3000, -33.92487, 18.42406, 2000_3000_-339249_184241",
+            "2000, 3000, -89.99999, -179.99999, 2000_3000_-900000_-1800000"
+    })
+    @DisplayName("точка отсчёта уезжает в payload целыми числами и не раздувает его за 64 символа")
+    void payloadCarriesOrigin(int cinema, int other, double lat, double lon, String expected) {
+        String payload = screens("bot").miniAppPayload(cinema, other, lat, lon);
+        assertThat(payload).isEqualTo(expected).matches("[A-Za-z0-9_-]+").hasSizeLessThanOrEqualTo(64);
+    }
+
+    @Test
+    @DisplayName("без точки payload прежнего вида — старые ссылки и «Пропустить» работают")
+    void payloadWithoutOriginKeepsOldFormat() {
+        assertThat(screens("bot").miniAppPayload(1200, 2500, null, null)).isEqualTo("1200_2500");
+    }
+
+    @Test
+    @DisplayName("клавиатура точки: геолокация первым рядом, затем точки городов и «Пропустить»")
+    void originKeyboard() {
+        List<List<Button>> keyboard = screens("bot").originKeyboard();
+        assertThat(keyboard.getFirst()).hasSize(1);
+        assertThat(keyboard.getFirst().getFirst()).isInstanceOf(RequestGeoLocationButton.class);
+        List<String> names = keyboard.stream().skip(1).flatMap(List::stream)
+                .map(b -> ((MessageButton) b).text()).toList();
+        assertThat(names).contains("Москва · центр", "Казань · центр", "Пропустить");
+        assertThat(names.getLast()).isEqualTo("Пропустить");
     }
 
     @Test

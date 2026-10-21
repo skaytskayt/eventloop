@@ -1,6 +1,8 @@
 package com.maxbot.eventLoop.dialog;
 
+import java.util.List;
 import ru.max.botapi.model.ChatType;
+import ru.max.botapi.model.LocationAttachment;
 import ru.max.botapi.model.Message;
 import ru.max.botapi.model.MessageBody;
 import ru.max.botapi.model.MessageCreatedUpdate;
@@ -26,9 +28,18 @@ final class TestUpdates {
         return message(userId, chatId, text, true);
     }
 
+    /** Геолокация из кнопки request_geo_location: текста нет, координаты во вложении. */
+    static MessageCreatedUpdate location(long userId, long chatId, double lat, double lon) {
+        MessageBody body = new MessageBody("mid-1", 1L, null, List.of(new LocationAttachment(lat, lon)), null);
+        return update(userId, chatId, body, false);
+    }
+
     private static MessageCreatedUpdate message(long userId, long chatId, String text, boolean bot) {
+        return update(userId, chatId, new MessageBody("mid-1", 1L, text, null, null), bot);
+    }
+
+    private static MessageCreatedUpdate update(long userId, long chatId, MessageBody body, boolean bot) {
         User sender = new User(userId, "Тест", null, null, null, bot, null);
-        MessageBody body = new MessageBody("mid-1", 1L, text, null, null);
         Message message = new Message(
                 sender,
                 new MessageRecipient(chatId, ChatType.DIALOG, null, null),
