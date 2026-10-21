@@ -1,5 +1,6 @@
 package com.maxbot.eventLoop.dialog;
 
+import com.maxbot.eventLoop.config.AdminIds;
 import com.maxbot.eventLoop.config.AppProperties;
 import com.maxbot.eventLoop.domain.AppUser;
 import com.maxbot.eventLoop.domain.DialogState;
@@ -48,14 +49,16 @@ public class DialogRouter implements UpdateHandler {
     private final MaxGateway max;
     private final WelcomeImage welcomeImage;
     private final AppProperties properties;
+    private final AdminIds admins;
 
     public DialogRouter(AppUserRepository users, Screens screens, MaxGateway max,
-                        WelcomeImage welcomeImage, AppProperties properties) {
+                        WelcomeImage welcomeImage, AppProperties properties, AdminIds admins) {
         this.users = users;
         this.screens = screens;
         this.max = max;
         this.welcomeImage = welcomeImage;
         this.properties = properties;
+        this.admins = admins;
     }
 
     @Override
@@ -101,6 +104,10 @@ public class DialogRouter implements UpdateHandler {
 
         if (text.toLowerCase(Locale.ROOT).startsWith("/start")) {
             restart(user, chatId);
+            return;
+        }
+        if (text.toLowerCase(Locale.ROOT).startsWith("/stats")) {
+            sendStats(sender.userId(), chatId);
             return;
         }
 
@@ -228,6 +235,26 @@ public class DialogRouter implements UpdateHandler {
             text = text + screens.miniAppMissing();
         }
         max.sendText(chatId, text, keyboard);
+    }
+
+    /**
+     * Скрытая админская команда: состояние диалога не меняет и в меню команд
+     * бота не регистрируется. Не администратору отвечает его MAX id — так его
+     * узнают, чтобы вписать в ADMIN_MAX_IDS.
+     */
+    private void sendStats(long maxUserId, long chatId) {
+        if (!admins.contains(maxUserId)) {
+            log.info("/stats от не администратора");
+            max.sendText(chatId, screens.statsForbidden(maxUserId), null);
+            return;
+        }
+        var keyboard = screens.statsKeyboard();
+        if (keyboard == null) {
+            log.warn("Username бота не задан (eventloop.bot-username) — статистику отправляю без кнопки");
+            max.sendText(chatId, screens.statsTitle() + screens.statsMissing(), null);
+            return;
+        }
+        max.sendText(chatId, screens.statsTitle(), keyboard);
     }
 
     private AppUser user(long maxUserId, long chatId) {

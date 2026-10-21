@@ -49,6 +49,13 @@ public class Screens {
     public static final String SKIP = "Пропустить";
     public static final String GEO_NAME = "По геолокации";
 
+    /**
+     * Payload кнопки статистики: Mini App с ним открывается сразу на экране
+     * статистики. Держать в паре с STATS_PARAM в app.js — синхронность
+     * проверяет ScreensMiniAppTest.
+     */
+    public static final String STATS_PAYLOAD = "stats";
+
     private final AppProperties properties;
 
     public Screens(AppProperties properties) {
@@ -216,5 +223,33 @@ public class Screens {
     /** Что дописать, когда username бота не настроен. */
     public String miniAppMissing() {
         return "\n\n_Кнопка приложения пока не настроена — задайте MAX\\_BOT\\_USERNAME._";
+    }
+
+    /** Ответ администратору на /stats. */
+    public String statsTitle() {
+        return "**Статистика EventLoop**\n"
+                + "Воронка, покупки и последние действия — в мини-приложении, "
+                + "обновляются каждые 3 секунды.";
+    }
+
+    /** Кнопка экрана статистики; null, если username бота не задан. */
+    public List<List<Button>> statsKeyboard() {
+        String bot = properties.botUsername();
+        if (bot == null || bot.isBlank()) {
+            return null;
+        }
+        return List.of(List.of(new OpenAppButton("📊 Открыть статистику", bot, null, STATS_PAYLOAD)));
+    }
+
+    /** Ответ на /stats не администратору: заодно это способ узнать свой id. */
+    public String statsForbidden(long maxUserId) {
+        return String.format(Locale.ROOT,
+                "Команда только для администраторов. Ваш MAX id: %d — добавьте его в ADMIN\\_MAX\\_IDS.",
+                maxUserId);
+    }
+
+    /** Что дописать к statsTitle, когда username бота не настроен. */
+    public String statsMissing() {
+        return "\n\n_Кнопки нет: не задан username бота — задайте MAX\\_BOT\\_USERNAME._";
     }
 }
