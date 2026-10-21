@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.maxbot.eventLoop.config.AdminIds;
+import java.time.Instant;
 import java.util.List;
 import java.util.OptionalLong;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 
 /**
- * Статистика — воронка и последние действия всех пользователей. Её видит только
+ * Статистика — метрики пилота по всем пользователям. Её видит только
  * администратор с подписанным initData; остальные получают 401/403, и хранилище
  * даже не опрашивается.
  */
@@ -32,8 +33,7 @@ class MiniAppControllerStatsTest {
         when(verifier.userId("forged")).thenReturn(OptionalLong.empty());
         when(verifier.userId("user42")).thenReturn(OptionalLong.of(42));
         when(verifier.userId("admin")).thenReturn(OptionalLong.of(777));
-        sample = new MiniAppStats(3, MiniAppStats.funnel(10, 5, 2, 1),
-                MiniAppStats.overallPercent(10, 1), 1500, 1, List.of(), List.of());
+        sample = MiniAppStats.compute(List.of(), List.of(), Instant.now());
     }
 
     private MiniAppController controller(String adminIds) {

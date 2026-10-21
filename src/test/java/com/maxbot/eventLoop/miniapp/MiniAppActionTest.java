@@ -35,17 +35,32 @@ class MiniAppActionTest {
     @Test
     @DisplayName("тело действия проверяется при создании")
     void requestValidation() {
-        assertThat(new ActionRequest(201, MiniAppAction.LIKE, 500, null).category()).isNull();
-        assertThat(new ActionRequest(201, MiniAppAction.LIKE, 0, "THEATRE").priceRub()).isZero();
-        assertThatThrownBy(() -> new ActionRequest(0, MiniAppAction.LIKE, 500, "THEATRE"))
+        assertThat(new ActionRequest(201, MiniAppAction.LIKE, 500, null, null).category()).isNull();
+        assertThat(new ActionRequest(201, MiniAppAction.LIKE, 0, "THEATRE", null).priceRub()).isZero();
+        assertThatThrownBy(() -> new ActionRequest(0, MiniAppAction.LIKE, 500, "THEATRE", null))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new ActionRequest(201, null, 500, "THEATRE"))
+        assertThatThrownBy(() -> new ActionRequest(201, null, 500, "THEATRE", null))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new ActionRequest(201, MiniAppAction.LIKE, -1, "THEATRE"))
+        assertThatThrownBy(() -> new ActionRequest(201, MiniAppAction.LIKE, -1, "THEATRE", null))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new ActionRequest(201, MiniAppAction.LIKE, 100001, "THEATRE"))
+        assertThatThrownBy(() -> new ActionRequest(201, MiniAppAction.LIKE, 100001, "THEATRE", null))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new ActionRequest(201, MiniAppAction.LIKE, 500, "theatre"))
+        assertThatThrownBy(() -> new ActionRequest(201, MiniAppAction.LIKE, 500, "theatre", null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("город необязателен, но только moscow или kazan")
+    void cityValidation() {
+        assertThat(new ActionRequest(201, MiniAppAction.LIKE, 500, "THEATRE", null).city()).isNull();
+        assertThat(new ActionRequest(201, MiniAppAction.LIKE, 500, "THEATRE", "moscow").city())
+                .isEqualTo("moscow");
+        assertThat(new ActionRequest(201, MiniAppAction.LIKE, 500, "THEATRE", "kazan").city())
+                .isEqualTo("kazan");
+        for (String bad : new String[] {"spb", "MOSCOW", ""}) {
+            assertThatThrownBy(() -> new ActionRequest(201, MiniAppAction.LIKE, 500, "THEATRE", bad))
+                    .as(bad)
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
     }
 }
