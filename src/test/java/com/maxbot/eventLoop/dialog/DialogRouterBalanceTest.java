@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import com.maxbot.eventLoop.config.AdminIds;
 import com.maxbot.eventLoop.config.AppProperties;
 import com.maxbot.eventLoop.domain.AppUser;
 import com.maxbot.eventLoop.domain.DialogState;
@@ -52,7 +53,8 @@ class DialogRouterBalanceTest {
         // случай — приветствие обязано уходить и без неё.
         WelcomeImage welcome = mock(WelcomeImage.class);
         when(welcome.photos()).thenReturn(null);
-        router = new DialogRouter(users, new Screens(properties), max, welcome, properties);
+        router = new DialogRouter(users, new Screens(properties), max, welcome, properties,
+                new AdminIds(""));
     }
 
     /** Роутер вызывается из обработчика апдейтов; здесь дёргаем ту же ветку. */
