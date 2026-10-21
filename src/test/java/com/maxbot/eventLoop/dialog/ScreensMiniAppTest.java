@@ -87,6 +87,19 @@ class ScreensMiniAppTest {
                 .contains(String.valueOf(origin.lon())));
     }
 
+    /**
+     * Если payload кнопки /stats и STATS_PARAM в app.js разойдутся, Mini App
+     * откроется на главном экране, а не на статистике.
+     */
+    @Test
+    @DisplayName("payload кнопки статистики известен Mini App")
+    void statsPayloadIsKnownToMiniApp() throws IOException {
+        String js = Files.readString(Path.of("src", "main", "resources", "static", "app", "app.js"),
+                StandardCharsets.UTF_8);
+        assertThat(Screens.STATS_PAYLOAD).matches("[A-Za-z0-9_-]+");
+        assertThat(js).contains("STATS_PARAM = '" + Screens.STATS_PAYLOAD + "'");
+    }
+
     @Test
     @DisplayName("без username бота кнопки нет")
     void noBotNoButton() {
