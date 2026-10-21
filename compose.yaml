@@ -43,6 +43,8 @@ services:
       MAX_BOT_USERNAME: ${MAX_BOT_USERNAME:-t560_hakaton_max_bot}
       # Origin копии мини-приложения на GitHub Pages: ей нужен CORS для /api.
       MINIAPP_ORIGINS: ${MINIAPP_ORIGINS:-https://skaytskayt.github.io}
+      # MAX user id администраторов через запятую: им доступна статистика (/stats).
+      ADMIN_MAX_IDS: ${ADMIN_MAX_IDS:-}
     # При долгом поллинге наружу ничего публиковать не нужно:
     # порт открыт только ради healthcheck и заглядывания в /actuator/health.
     ports:

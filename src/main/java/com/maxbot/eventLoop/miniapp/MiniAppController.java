@@ -1,6 +1,6 @@
 package com.maxbot.eventLoop.miniapp;
 
-import java.net.URI;
+import com.maxbot.eventLoop.config.AdminIds;
 import java.util.List;
 import java.util.OptionalLong;
 import java.util.regex.Pattern;
@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * API Mini App: реакции пользователя, журнал действий и публичная статистика.
+ * API Mini App: реакции пользователя, журнал действий и статистика для администраторов.
  *
  * <p>Пользователь определяется только по подписанному initData из заголовка
  * {@code X-Init-Data}. Сам заголовок не логируется: там подпись и имя.
@@ -27,10 +27,12 @@ public class MiniAppController {
 
     private final InitDataVerifier verifier;
     private final MiniAppStore store;
+    private final AdminIds admins;
 
-    public MiniAppController(InitDataVerifier verifier, MiniAppStore store) {
+    public MiniAppController(InitDataVerifier verifier, MiniAppStore store, AdminIds admins) {
         this.verifier = verifier;
         this.store = store;
+        this.admins = admins;
     }
 
     /**
@@ -82,12 +84,17 @@ public class MiniAppController {
     }
 
     @GetMapping("/api/stats")
-    public MiniAppStats stats() {
-        return store.stats();
-    }
-
-    @GetMapping("/stats")
-    public ResponseEntity<Void> statsPage() {
-        return ResponseEntity.status(302).location(URI.create("/stats.html")).build();
+    public ResponseEntity<MiniAppStats> stats(
+            @RequestHeader(value = INIT_DATA, required = false) String initData) {
+        OptionalLong userId = verifier.userId(initData);
+        if (userId.isEmpty()) {
+            log.debug("Статистика без валидной подписи initData");
+            return ResponseEntity.status(401).build();
+        }
+        if (!admins.contains(userId.getAsLong())) {
+            log.debug("Статистику запросил не администратор");
+            return ResponseEntity.status(403).build();
+        }
+        return ResponseEntity.ok(store.stats());
     }
 }

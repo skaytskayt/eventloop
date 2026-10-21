@@ -2,7 +2,7 @@ package com.maxbot.eventLoop.miniapp;
 
 import java.util.List;
 
-/** Агрегаты для страницы /stats. Ни одного id пользователя — только счётчики. */
+/** Агрегаты для экрана статистики Mini App. Ни одного id пользователя — только счётчики. */
 public record MiniAppStats(
         long users,
         List<FunnelStep> funnel,

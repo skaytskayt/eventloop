@@ -65,6 +65,10 @@ eventloop:
   # на GitHub Pages; когда приложение раздаёт сам бэкенд по /app/, это тот же
   # origin и список не участвует. Несколько адресов — через запятую.
   miniapp-origins: ${MINIAPP_ORIGINS:https://skaytskayt.github.io}
+  # Администраторы — MAX user id через запятую. Им бот отвечает на /stats кнопкой
+  # статистики, и только им /api/stats отдаёт данные. Пустой — статистику не видит
+  # никто. Свой id бот сообщает в ответ на /stats.
+  admin-max-ids: ${ADMIN_MAX_IDS:}
 
 management:
   endpoints:
