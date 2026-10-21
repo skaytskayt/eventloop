@@ -3,6 +3,7 @@ package com.maxbot.eventLoop.miniapp;
 import com.maxbot.eventLoop.config.AdminIds;
 import java.util.List;
 import java.util.OptionalLong;
+import java.util.Set;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,9 +40,11 @@ public class MiniAppController {
      * Тело действия. Невалидное значение бросает исключение из конструктора —
      * Jackson его оборачивает, и Spring отвечает 400.
      */
-    public record ActionRequest(int eventId, MiniAppAction action, int priceRub, String category) {
+    public record ActionRequest(int eventId, MiniAppAction action, int priceRub, String category,
+                                String city) {
 
         private static final Pattern CATEGORY = Pattern.compile("^[A-Z_]{1,32}$");
+        private static final Set<String> CITIES = Set.of("moscow", "kazan");
 
         public ActionRequest {
             if (eventId <= 0) {
@@ -55,6 +58,9 @@ public class MiniAppController {
             }
             if (category != null && !CATEGORY.matcher(category).matches()) {
                 throw new IllegalArgumentException("неизвестный формат категории");
+            }
+            if (city != null && !CITIES.contains(city)) {
+                throw new IllegalArgumentException("неизвестный город");
             }
         }
     }
