@@ -14,9 +14,10 @@ import java.time.Instant;
  * Пользователь бота.
  *
  * <p>Бот спрашивает, сколько всего на карте и сколько из этого на кино, и
- * хранит два кошелька — кино и остальное; здесь остались только они и состояние диалога. Район, расстояние,
- * категории и фильтр по датам уехали в мини-приложение: колонки под них в
- * схеме остались, но больше не отображаются — Hibernate с
+ * хранит два кошелька — кино и остальное, состояние диалога и точку отсчёта
+ * расстояния (колонки origin_* живут в схеме с V1). Район, максимальное
+ * расстояние, категории и фильтр по датам по-прежнему в мини-приложении:
+ * колонки под них в схеме остались, но не отображаются — Hibernate с
  * {@code ddl-auto: validate} лишние колонки не проверяет.
  */
 @Entity
@@ -42,6 +43,16 @@ public class AppUser {
 
     @Column(name = "other_balance_rub", nullable = false)
     private int otherRub;
+
+    /** Точка отсчёта расстояния; все три null — считать от центра Москвы. */
+    @Column(name = "origin_name", length = 128)
+    private String originName;
+
+    @Column(name = "origin_lat")
+    private Double originLat;
+
+    @Column(name = "origin_lon")
+    private Double originLon;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private Instant createdAt;
@@ -97,6 +108,25 @@ public class AppUser {
 
     public void setOtherRub(int otherRub) {
         this.otherRub = otherRub;
+        this.updatedAt = Instant.now();
+    }
+
+    public String getOriginName() {
+        return originName;
+    }
+
+    public Double getOriginLat() {
+        return originLat;
+    }
+
+    public Double getOriginLon() {
+        return originLon;
+    }
+
+    public void setOrigin(String name, Double lat, Double lon) {
+        this.originName = name;
+        this.originLat = lat;
+        this.originLon = lon;
         this.updatedAt = Instant.now();
     }
 }

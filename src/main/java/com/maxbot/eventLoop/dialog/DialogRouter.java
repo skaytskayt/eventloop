@@ -5,23 +5,31 @@ import com.maxbot.eventLoop.domain.AppUser;
 import com.maxbot.eventLoop.domain.DialogState;
 import com.maxbot.eventLoop.gateway.MaxGateway;
 import com.maxbot.eventLoop.gateway.WelcomeImage;
+import com.maxbot.eventLoop.geo.Haversine;
 import com.maxbot.eventLoop.repo.AppUserRepository;
 import java.util.Locale;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import ru.max.botapi.core.UpdateHandler;
 import ru.max.botapi.model.BotStartedUpdate;
+import ru.max.botapi.model.LocationAttachment;
 import ru.max.botapi.model.MessageCreatedUpdate;
 import ru.max.botapi.model.Update;
 
 /**
- * Весь диалог бота: два вопроса про деньги и кнопка мини-приложения.
+ * Весь диалог бота: три вопроса — два про деньги и точка отсчёта — и кнопка
+ * мини-приложения.
  *
- * <p>Кошельков два, поэтому и вопроса два: сколько всего на карте и сколько из
- * этого на кино. Остальное — разница. Одной суммой обойтись нельзя: где именно
- * потрачено недостающее, знает только держатель карты, и приложению пришлось
- * бы делить остаток наугад.
+ * <p>Кошельков два, поэтому и вопроса про деньги два: сколько всего на карте и
+ * сколько из этого на кино. Остальное — разница. Одной суммой обойтись нельзя:
+ * где именно потрачено недостающее, знает только держатель карты, и приложению
+ * пришлось бы делить остаток наугад.
+ *
+ * <p>Третий вопрос — откуда считать расстояние. Геолокацию умеет запросить
+ * только бот (кнопка request_geo_location), поэтому точка выбирается здесь и
+ * уезжает в мини-приложение вместе с суммами; по ней же выбирается город ленты.
  *
  * <p>Раньше здесь жила лента со свайпами, меню и фильтрами. Их забрало
  * мини-приложение: листать карточки в переписке медленнее, а две реализации
@@ -86,6 +94,10 @@ public class DialogRouter implements UpdateHandler {
         long chatId = recipient.chatId();
         AppUser user = user(sender.userId(), chatId);
         String text = body.text() == null ? "" : body.text().trim();
+        LocationAttachment location = body.attachments() == null ? null : body.attachments().stream()
+                .filter(LocationAttachment.class::isInstance)
+                .map(LocationAttachment.class::cast)
+                .findFirst().orElse(null);
 
         if (text.toLowerCase(Locale.ROOT).startsWith("/start")) {
             restart(user, chatId);
@@ -95,9 +107,16 @@ public class DialogRouter implements UpdateHandler {
         switch (user.getDialogState()) {
             case NEW, AWAITING_TOTAL -> onTotalInput(user, chatId, text);
             case AWAITING_CINEMA -> onCinemaInput(user, chatId, text);
-            // Обе суммы названы. Любой текст после этого — повод показать
-            // кнопку ещё раз, а не отчитывать за неправильную команду.
-            case READY -> sendMiniApp(user, chatId);
+            case AWAITING_ORIGIN -> onOriginInput(user, chatId, text, location);
+            // Всё названо. Любой текст после этого — повод показать кнопку ещё
+            // раз, а не отчитывать за неправильную команду. Старые кнопки точки
+            // в истории чата остаются живыми, поэтому сменить точку можно в
+            // любой момент — нажатием или новой геолокацией.
+            case READY -> {
+                applyOrigin(user, text, location);
+                users.save(user);
+                sendMiniApp(user, chatId);
+            }
         }
     }
 
@@ -141,11 +160,58 @@ public class DialogRouter implements UpdateHandler {
             case BalanceParser.Result.Ok ok -> {
                 user.setCinemaRub(ok.rubles());
                 user.setOtherRub(total - ok.rubles());
-                user.setDialogState(DialogState.READY);
+                user.setDialogState(DialogState.AWAITING_ORIGIN);
                 users.save(user);
-                sendMiniApp(user, chatId);
+                max.sendText(chatId, screens.askOrigin(), screens.originKeyboard());
             }
         }
+    }
+
+    /** Точка отсчёта: геолокация, кнопка-точка или «Пропустить». Иное — переспрашиваем. */
+    private void onOriginInput(AppUser user, long chatId, String text, LocationAttachment location) {
+        if (applyOrigin(user, text, location)) {
+            user.setDialogState(DialogState.READY);
+            users.save(user);
+            sendMiniApp(user, chatId);
+        } else {
+            max.sendText(chatId, screens.askOrigin(), screens.originKeyboard());
+        }
+    }
+
+    /**
+     * Распознаёт точку и пишет её в пользователя; false — сообщение не про точку.
+     * Координаты округляются до 4 знаков (~11 м): точнее для «до N км» не нужно,
+     * а лишняя точность — лишние сведения о человеке.
+     */
+    private boolean applyOrigin(AppUser user, String text, LocationAttachment location) {
+        if (location != null && location.latitude() >= -90 && location.latitude() <= 90
+                && location.longitude() >= -180 && location.longitude() <= 180) {
+            double lat = location.latitude();
+            double lon = location.longitude();
+            Screens.Origin center = screens.nearestCenter(lat, lon);
+            // Дальше 100 км от обоих городов лента пуста при любом фильтре
+            // (максимум — 50 км), поэтому считаем от центра ближайшего.
+            if (Haversine.distanceKm(lat, lon, center.lat(), center.lon()) > 100) {
+                user.setOrigin(center.name(), center.lat(), center.lon());
+            } else {
+                user.setOrigin(Screens.GEO_NAME, round4(lat), round4(lon));
+            }
+            return true;
+        }
+        Optional<Screens.Origin> origin = screens.originByText(text);
+        if (origin.isPresent()) {
+            user.setOrigin(origin.get().name(), origin.get().lat(), origin.get().lon());
+            return true;
+        }
+        if (Screens.SKIP.equalsIgnoreCase(text)) {
+            user.setOrigin(null, null, null);
+            return true;
+        }
+        return false;
+    }
+
+    private static double round4(double value) {
+        return Math.round(value * 10000) / 10000.0;
     }
 
     /**
@@ -155,8 +221,8 @@ public class DialogRouter implements UpdateHandler {
     private void sendMiniApp(AppUser user, long chatId) {
         int cinema = user.getCinemaRub();
         int other = user.getOtherRub();
-        var keyboard = screens.miniAppKeyboard(cinema, other);
-        String text = screens.ready();
+        var keyboard = screens.miniAppKeyboard(cinema, other, user.getOriginLat(), user.getOriginLon());
+        String text = screens.ready() + screens.originNote(user.getOriginName());
         if (keyboard == null) {
             log.warn("Username бота не задан (eventloop.bot-username) — отправляю без кнопки");
             text = text + screens.miniAppMissing();
