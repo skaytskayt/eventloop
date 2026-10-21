@@ -3,6 +3,10 @@ package com.maxbot.eventLoop.dialog;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.maxbot.eventLoop.config.AppProperties;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -64,6 +68,23 @@ class ScreensMiniAppTest {
                 .map(b -> ((MessageButton) b).text()).toList();
         assertThat(names).contains("Москва · центр", "Казань · центр", "Пропустить");
         assertThat(names.getLast()).isEqualTo("Пропустить");
+    }
+
+    /**
+     * Mini App восстанавливает название точки по координатам из payload.
+     * Разошлись списки — в профиле вместо «Казань · м. Горки» будет
+     * «По геолокации», и никто не поймёт почему.
+     */
+    @Test
+    @DisplayName("точки бота продублированы в Mini App")
+    void originsAreMirroredInMiniApp() throws IOException {
+        String js = Files.readString(Path.of("src", "main", "resources", "static", "app", "app.js"),
+                StandardCharsets.UTF_8);
+        assertThat(Screens.ORIGINS).allSatisfy(origin -> assertThat(js)
+                .as("точка «%s» в app.js", origin.name())
+                .contains("'" + origin.name() + "'")
+                .contains(String.valueOf(origin.lat()))
+                .contains(String.valueOf(origin.lon())));
     }
 
     @Test

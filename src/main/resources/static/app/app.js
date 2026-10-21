@@ -33,7 +33,8 @@
 
   // card — сколько на каждом кошельке Пушкинской карты. Приходит из бота
   // ссылкой, до этого считаем от полного номинала.
-  var state = { screen: 'screen-welcome', tab: 'liked', index: 0, detail: null, back: 'screen-feed', liked: [], saved: [], disliked: [], bought: [], pending: null, card: null, cats: [], date: 'ANY', km: 10, open: null, undo: [], spentBase: null, editWallet: null };
+  // origin — точка отсчёта из бота, {lat, lon}; null — центр Москвы.
+  var state = { screen: 'screen-welcome', tab: 'liked', index: 0, detail: null, back: 'screen-feed', liked: [], saved: [], disliked: [], bought: [], pending: null, card: null, cats: [], date: 'ANY', km: 10, open: null, undo: [], spentBase: null, editWallet: null, origin: null };
 
   /* ---- Мелкие помощники --------------------------------------------- */
 
@@ -84,7 +85,7 @@
         liked: state.liked, saved: state.saved, disliked: state.disliked,
         bought: state.bought, pending: state.pending, card: state.card,
         spentBase: state.spentBase, undo: state.undo,
-        cats: state.cats, date: state.date, km: state.km
+        cats: state.cats, date: state.date, km: state.km, origin: state.origin
       })); } catch (e) { /* приватный режим */ }
   }
 
@@ -108,7 +109,15 @@
       if (v && v.cats instanceof Array) { state.cats = v.cats; }
       if (v && DATES[v.date]) { state.date = v.date; }
       if (v && KMS.indexOf(v.km) >= 0) { state.km = v.km; }
+      if (v && v.origin && validOrigin(v.origin.lat, v.origin.lon)) {
+        state.origin = { lat: v.origin.lat, lon: v.origin.lon };
+      }
     } catch (e) { /* пустое хранилище — не ошибка */ }
+  }
+
+  function validOrigin(lat, lon) {
+    return typeof lat === 'number' && isFinite(lat) && lat >= -90 && lat <= 90
+        && typeof lon === 'number' && isFinite(lon) && lon >= -180 && lon <= 180;
   }
 
   function validAmount(value, code) {
@@ -124,7 +133,10 @@
    * мог сходить в бот именно затем, чтобы поправить суммы.
    *
    * Кошельки читаются независимо: если бот передал только один параметр,
-   * второй остаётся прежним, а не обнуляется. */
+   * второй остаётся прежним, а не обнуляется.
+   *
+   * С точкой отсчёта бот шлёт четыре части: «1200_2500_557961_491064» —
+   * суммы те же, координаты разбирает readOriginFromLink. */
   function startParam(params) {
     try {
       var p = window.WebApp && window.WebApp.initDataUnsafe && window.WebApp.initDataUnsafe.start_param;
@@ -140,7 +152,7 @@
     } catch (e) {
       return;
     }
-    var fromBot = /^(\d+)_(\d+)$/.exec(startParam(params));
+    var fromBot = /^(\d+)_(\d+)(?:_-?\d{1,7}_-?\d{1,7})?$/.exec(startParam(params));
     var amounts = fromBot ? { cinema: fromBot[1], other: fromBot[2] } : {};
     var changed = false;
     [['cinema', 'CINEMA'], ['other', 'OTHER']].forEach(function (pair) {
@@ -155,6 +167,30 @@
     if (changed) { save(); }
   }
 
+  /* Точка отсчёта от бота: широта и долгота, умноженные на 10000, — целыми,
+   * потому что точку и кириллицу MAX в параметр не пропускает. Ссылка без
+   * координат пришла после «Пропустить» — свежая ссылка важнее сохранённого,
+   * как с суммами. Прямая ссылка без параметра сохранённое не трогает. */
+  function readOriginFromLink() {
+    var params;
+    try {
+      params = new URLSearchParams(location.search);
+    } catch (e) {
+      return;
+    }
+    var m = /^\d+_\d+(?:_(-?\d{1,7})_(-?\d{1,7}))?$/.exec(startParam(params));
+    if (!m) { return; }
+    if (m[1] === undefined) {
+      state.origin = null;
+    } else {
+      var lat = Number(m[1]) / 10000;
+      var lon = Number(m[2]) / 10000;
+      if (!validOrigin(lat, lon)) { return; }
+      state.origin = { lat: lat, lon: lon };
+    }
+    save();
+  }
+
   /* Записи о покупках правят баланс, поэтому из хранилища берём только
    * целые: кошелёк из известных, цена числом. Битая запись молча уронила бы
    * арифметику всей карты. */
@@ -162,7 +198,78 @@
     return b && typeof b.eventId === 'number' && typeof b.priceRub === 'number' && !!WALLETS[b.wallet];
   }
 
-  function loadFeed() { return MOCK_EVENTS; }
+  /* ---- Точка отсчёта и город ленты -------------------------------------
+   * Расстояние считается здесь, а не лежит в data.js: оно зависит от точки,
+   * выбранной в боте. Город ленты — тот, чей центр ближе к точке.
+   */
+  var CITIES = {
+    moscow: { title: 'Москва', lat: 55.7558, lon: 37.6173 },
+    kazan: { title: 'Казань', lat: 55.7961, lon: 49.1064 }
+  };
+
+  // Держать в паре с Screens.ORIGINS; синхронность проверяет ScreensMiniAppTest.
+  // Названия нужны для профиля: payload несёт только координаты.
+  var ORIGINS = [
+    { name: 'Москва · центр', lat: 55.7558, lon: 37.6173 },
+    { name: 'Москва · м. ВДНХ', lat: 55.8196, lon: 37.6408 },
+    { name: 'Москва · м. Юго-Западная', lat: 55.6631, lon: 37.4829 },
+    { name: 'Москва · м. Выхино', lat: 55.7163, lon: 37.8164 },
+    { name: 'Казань · центр', lat: 55.7961, lon: 49.1064 },
+    { name: 'Казань · м. Козья слобода', lat: 55.8182, lon: 49.0999 },
+    { name: 'Казань · м. Горки', lat: 55.7600, lon: 49.1916 },
+    { name: 'Казань · м. Проспект Победы', lat: 55.7504, lon: 49.2096 }
+  ];
+
+  // Та же формула и тот же радиус, что geo/Haversine.java.
+  function haversineKm(lat1, lon1, lat2, lon2) {
+    var rad = Math.PI / 180;
+    var dLat = (lat2 - lat1) * rad;
+    var dLon = (lon2 - lon1) * rad;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+      + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(a)));
+  }
+
+  function originPoint() {
+    return state.origin || CITIES.moscow;
+  }
+
+  function cityCode() {
+    var p = originPoint();
+    var best = null;
+    var bestKm = Infinity;
+    Object.keys(CITIES).forEach(function (code) {
+      var km = haversineKm(p.lat, p.lon, CITIES[code].lat, CITIES[code].lon);
+      if (km < bestKm) { bestKm = km; best = code; }
+    });
+    return best;
+  }
+
+  function originLabel() {
+    if (!state.origin) { return 'Москва · центр'; }
+    for (var i = 0; i < ORIGINS.length; i++) {
+      if (Math.abs(ORIGINS[i].lat - state.origin.lat) <= 0.0002
+          && Math.abs(ORIGINS[i].lon - state.origin.lon) <= 0.0002) {
+        return ORIGINS[i].name;
+      }
+    }
+    return 'По геолокации · ' + CITIES[cityCode()].title;
+  }
+
+  /* Лента и счётчики — только своего города. Избранное, купленное и якоря
+   * вкуса ищутся по всей афише (MOCK_EVENTS): смена города не должна их терять. */
+  var FEED = [];
+
+  function prepareFeed() {
+    var p = originPoint();
+    var city = cityCode();
+    MOCK_EVENTS.forEach(function (e) {
+      e.distanceKm = Math.round(haversineKm(p.lat, p.lon, e.venueLat, e.venueLon) * 10) / 10;
+    });
+    FEED = MOCK_EVENTS.filter(function (e) { return e.city === city; });
+  }
+
+  function loadFeed() { return FEED; }
 
   function marked(id) {
     return state.liked.indexOf(id) >= 0 || state.saved.indexOf(id) >= 0
@@ -346,7 +453,7 @@
 
   function listOf(kind) {
     var ids = kind === 'liked' ? state.liked : state.saved;
-    return loadFeed().filter(function (e) { return ids.indexOf(e.eventId) >= 0; });
+    return MOCK_EVENTS.filter(function (e) { return ids.indexOf(e.eventId) >= 0; });
   }
 
   function mark(item, kind) {
@@ -740,7 +847,7 @@
     var why = becauseLine(item);
     if (why) { body.appendChild(why); }
     body.appendChild(metaRow('calendar', whenText(item.startsAt)));
-    body.appendChild(metaRow('pin', item.venueName));
+    body.appendChild(metaRow('pin', item.venueName + ' · ' + Fmt.distance(item.distanceKm)));
     body.appendChild(priceBlock(item, false));
     body.appendChild(actions(item));
     body.appendChild(saveButton(item));
@@ -804,7 +911,7 @@
     var why = becauseLine(item);
     if (why) { over.appendChild(why); }
     over.appendChild(metaRow('calendar', whenText(item.startsAt)));
-    over.appendChild(metaRow('pin', item.venueName));
+    over.appendChild(metaRow('pin', item.venueName + ' · ' + Fmt.distance(item.distanceKm)));
     ph.appendChild(over);
     card.appendChild(ph);
 
@@ -1018,6 +1125,8 @@
     document.getElementById('profile-note').textContent = count
       ? 'Осталось после ' + count + ' ' + Fmt.plural(count, 'покупки', 'покупок', 'покупок')
       : 'Баланс карты';
+    document.getElementById('profile-origin').textContent =
+      originLabel() + ' — от этой точки считается расстояние. Сменить можно в боте.';
 
     renderWallets();
     renderBought();
@@ -1149,7 +1258,7 @@
   }
 
   function byEventId(id) {
-    return loadFeed().filter(function (e) { return e.eventId === id; })[0] || null;
+    return MOCK_EVENTS.filter(function (e) { return e.eventId === id; })[0] || null;
   }
 
   /* ---- Подтверждение покупки -------------------------------------------
@@ -1228,7 +1337,8 @@
     box.replaceChildren();
     if (state.screen !== 'screen-detail') { return; }
 
-    var item = loadFeed().filter(function (e) { return e.sessionId === state.detail; })[0];
+    // По всей афише: подробную карточку открывают и из избранного другого города.
+    var item = MOCK_EVENTS.filter(function (e) { return e.sessionId === state.detail; })[0];
     if (!item) { return; }
 
     var wrap = el('div', 'detail');
@@ -1278,7 +1388,7 @@
     }
 
     head.appendChild(metaRow('calendar', whenText(item.startsAt)));
-    head.appendChild(metaRow('pin', item.venueName));
+    head.appendChild(metaRow('pin', item.venueName + ' · ' + Fmt.distance(item.distanceKm)));
     head.appendChild(metaRow('map', item.venueAddress));
 
     var price = priceBlock(item, false);
@@ -1552,6 +1662,8 @@
 
   read();
   readBalanceFromLink();
+  readOriginFromLink();
+  prepareFeed();
   render();
   // Вкладку могли закрыть, не ответив: незаданный вопрос ждёт в хранилище.
   askPurchase();
