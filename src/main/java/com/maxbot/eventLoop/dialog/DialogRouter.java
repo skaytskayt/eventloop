@@ -239,13 +239,14 @@ public class DialogRouter implements UpdateHandler {
 
     /**
      * Скрытая админская команда: состояние диалога не меняет и в меню команд
-     * бота не регистрируется. Не администратору отвечает его MAX id — так его
-     * узнают, чтобы вписать в ADMIN_MAX_IDS.
+     * бота не регистрируется. Не администратору отвечает, что такой команды
+     * нет: ни о ролях, ни о самой статистике чужим знать незачем. Его id
+     * остаётся только в логе сервера — оттуда его берут для ADMIN_MAX_IDS.
      */
     private void sendStats(long maxUserId, long chatId) {
         if (!admins.contains(maxUserId)) {
-            log.info("/stats от не администратора");
-            max.sendText(chatId, screens.statsForbidden(maxUserId), null);
+            log.info("/stats от не администратора, MAX id {}", maxUserId);
+            max.sendText(chatId, screens.unknownCommand(), null);
             return;
         }
         var keyboard = screens.statsKeyboard();

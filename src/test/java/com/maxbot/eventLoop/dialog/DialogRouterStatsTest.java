@@ -120,14 +120,14 @@ class DialogRouterStatsTest {
     }
 
     @Test
-    @DisplayName("не администратору — отказ с его MAX id, без кнопки")
+    @DisplayName("не администратору — «такой команды нет», без id и без кнопки")
     void notAdmin() {
         ready();
         send(router("777", "test_bot"), "/stats");
 
-        assertThat(lastText()).contains("Команда только для администраторов")
-                .contains("Ваш MAX id: 42")
-                .contains("ADMIN\\_MAX\\_IDS");
+        assertThat(lastText()).isEqualTo("Такой команды нет.")
+                .doesNotContain("42")
+                .doesNotContain("ADMIN");
         assertThat(lastKeyboard()).isNull();
         assertThat(user.getDialogState()).isEqualTo(DialogState.READY);
     }
@@ -138,7 +138,7 @@ class DialogRouterStatsTest {
         ready();
         send(router("", "test_bot"), "/stats");
 
-        assertThat(lastText()).contains("Команда только для администраторов").contains("Ваш MAX id: 42");
+        assertThat(lastText()).isEqualTo("Такой команды нет.");
         assertThat(lastKeyboard()).isNull();
     }
 

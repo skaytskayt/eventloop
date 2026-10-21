@@ -241,11 +241,9 @@ public class Screens {
         return List.of(List.of(new OpenAppButton("📊 Открыть статистику", bot, null, STATS_PAYLOAD)));
     }
 
-    /** Ответ на /stats не администратору: заодно это способ узнать свой id. */
-    public String statsForbidden(long maxUserId) {
-        return String.format(Locale.ROOT,
-                "Команда только для администраторов. Ваш MAX id: %d — добавьте его в ADMIN\\_MAX\\_IDS.",
-                maxUserId);
+    /** Ответ на /stats не администратору: команда для него не существует. */
+    public String unknownCommand() {
+        return "Такой команды нет.";
     }
 
     /** Что дописать к statsTitle, когда username бота не настроен. */
