@@ -173,7 +173,9 @@ public class DialogRouter implements UpdateHandler {
      */
     private void onCinemaInput(AppUser user, long chatId, String text) {
         int total = user.getOtherRub();
-        switch (BalanceParser.parse(text, properties.cinemaLimitRub())) {
+        // Без предела у парсера: любую сумму сверх допустимой объясняет
+        // cinemaOutOfRange, а не общее «больше не может быть».
+        switch (BalanceParser.parse(text, Integer.MAX_VALUE)) {
             case BalanceParser.Result.Error error -> max.sendText(chatId, error.message(), null);
             case BalanceParser.Result.Ok ok when ok.rubles() < screens.minCinema(total)
                     || ok.rubles() > screens.maxCinema(total) ->

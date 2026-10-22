@@ -46,7 +46,7 @@ public final class BalanceParser {
         }
         if (value > maxRubles) {
             return new Result.Error("На Пушкинской карте не может быть больше " + maxRubles
-                    + " ₽. Проверь сумму.");
+                    + " ₽ на кино. Проверь сумму.");
         }
         return new Result.Ok((int) value);
     }

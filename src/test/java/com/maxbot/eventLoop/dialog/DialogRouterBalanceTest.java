@@ -165,10 +165,11 @@ class DialogRouterBalanceTest {
     @DisplayName("на кино больше номинала кошелька нельзя")
     void rejectsCinemaAboveWalletLimit() {
         send("/start");
-        send("5000");
-        send("2500");
+        send("3000");
+        send("3000");
         assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_CINEMA);
-        assertThat(lastText()).contains("2000");
+        assertThat(lastText()).isEqualTo("При 3000 ₽ на карте на кино может быть не больше 2000 ₽: "
+                + "на кино — до 2000 ₽, на остальное — до 3000 ₽. Сколько на кино?");
     }
 
     @Test
