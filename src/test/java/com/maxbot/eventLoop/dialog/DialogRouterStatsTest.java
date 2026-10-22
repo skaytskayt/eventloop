@@ -50,7 +50,7 @@ class DialogRouterStatsTest {
         WelcomeImage welcome = mock(WelcomeImage.class);
         when(welcome.photos()).thenReturn(null);
         return new DialogRouter(users, new Screens(properties), max, welcome, properties,
-                new AdminIds(adminIds));
+                new AdminIds(adminIds), q -> Optional.empty());
     }
 
     private void send(DialogRouter router, String text) {

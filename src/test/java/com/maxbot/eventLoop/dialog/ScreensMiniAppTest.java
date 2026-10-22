@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import ru.max.botapi.model.Button;
-import ru.max.botapi.model.MessageButton;
 import ru.max.botapi.model.OpenAppButton;
 import ru.max.botapi.model.RequestGeoLocationButton;
 
@@ -53,38 +52,38 @@ class ScreensMiniAppTest {
     }
 
     @Test
-    @DisplayName("без точки payload прежнего вида — старые ссылки и «Пропустить» работают")
+    @DisplayName("без точки payload прежнего вида — старые ссылки работают")
     void payloadWithoutOriginKeepsOldFormat() {
         assertThat(screens("bot").miniAppPayload(1200, 2500, null, null)).isEqualTo("1200_2500");
     }
 
     @Test
-    @DisplayName("клавиатура точки: геолокация первым рядом, затем точки городов и «Пропустить»")
+    @DisplayName("клавиатура точки: ровно одна кнопка геолокации")
     void originKeyboard() {
         List<List<Button>> keyboard = screens("bot").originKeyboard();
+        assertThat(keyboard).hasSize(1);
         assertThat(keyboard.getFirst()).hasSize(1);
         assertThat(keyboard.getFirst().getFirst()).isInstanceOf(RequestGeoLocationButton.class);
-        List<String> names = keyboard.stream().skip(1).flatMap(List::stream)
-                .map(b -> ((MessageButton) b).text()).toList();
-        assertThat(names).contains("Москва · центр", "Казань · центр", "Пропустить");
-        assertThat(names.getLast()).isEqualTo("Пропустить");
+        assertThat(((RequestGeoLocationButton) keyboard.getFirst().getFirst()).text())
+                .isEqualTo("📍 Отправить геолокацию");
     }
 
-    /**
-     * Mini App восстанавливает название точки по координатам из payload.
-     * Разошлись списки — в профиле вместо «Казань · м. Горки» будет
-     * «По геолокации», и никто не поймёт почему.
-     */
     @Test
-    @DisplayName("точки бота продублированы в Mini App")
-    void originsAreMirroredInMiniApp() throws IOException {
-        String js = Files.readString(Path.of("src", "main", "resources", "static", "app", "app.js"),
-                StandardCharsets.UTF_8);
-        assertThat(Screens.ORIGINS).allSatisfy(origin -> assertThat(js)
-                .as("точка «%s» в app.js", origin.name())
-                .contains("'" + origin.name() + "'")
-                .contains(String.valueOf(origin.lat()))
-                .contains(String.valueOf(origin.lon())));
+    @DisplayName("вопрос о точке: геолокация или адрес, без «Пропустить»")
+    void askOriginText() {
+        assertThat(screens("bot").askOrigin())
+                .isEqualTo("📍 Откуда поедешь? Поделись геолокацией кнопкой ниже или напиши адрес — "
+                        + "например, «Казань, Баумана 10» или просто «Москва, Арбат».")
+                .doesNotContain("Пропустить");
+    }
+
+    @Test
+    @DisplayName("ответы на адрес: «нашёл» с адресом и «не нашёл» с подсказкой")
+    void addressTexts() {
+        Screens s = screens("bot");
+        assertThat(s.addressFound("X")).isEqualTo("Нашёл: X. Считаю расстояние отсюда.");
+        assertThat(s.addressNotFound()).isEqualTo("Не нашёл такой адрес в Москве или Казани. "
+                + "Попробуй точнее — улица и дом — или отправь геолокацию.");
     }
 
     /**
