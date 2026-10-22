@@ -1751,8 +1751,9 @@
       var row = el('div', 'stats-cat');
       var line = el('div', 'stats-line');
       line.appendChild(el('span', 'stats-name', Cat.title(c.category)));
+      // Процент тот же, что рисует полоса, — иначе полоса и число спорят.
       line.appendChild(el('span', 'stats-pct',
-        known(c.dislikePercent) ? fmtPct(c.dislikePercent) + ' не нравится' : '—'));
+        known(c.dislikePercent) ? fmtPct(100 - c.dislikePercent) + ' «Пойду»' : '—'));
       row.appendChild(line);
       row.appendChild(el('div', 'stats-meta', likes + ' «Пойду» · ' + dislikes + ' не нравится'));
       row.appendChild(statsBar(likes, likes + dislikes));
