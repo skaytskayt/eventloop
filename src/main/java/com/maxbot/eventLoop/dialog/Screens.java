@@ -2,14 +2,10 @@ package com.maxbot.eventLoop.dialog;
 
 import com.maxbot.eventLoop.config.AppProperties;
 import com.maxbot.eventLoop.geo.Haversine;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
 import org.springframework.stereotype.Component;
 import ru.max.botapi.model.Button;
-import ru.max.botapi.model.MessageButton;
 import ru.max.botapi.model.OpenAppButton;
 import ru.max.botapi.model.RequestGeoLocationButton;
 
@@ -29,24 +25,12 @@ public class Screens {
     }
 
     /**
-     * Точки, которые можно выбрать кнопкой. Mini App знает их названия из
-     * своего списка ORIGINS в app.js: payload не несёт кириллицу, поэтому
-     * название восстанавливается по координатам. Держать в паре с app.js —
-     * синхронность проверяет ScreensMiniAppTest.
+     * Центры городов. По ближайшему из них выбирается город ленты; те же
+     * координаты лежат в CITIES в app.js — синхронность проверяет
+     * ScreensMiniAppTest.
      */
-    public static final List<Origin> ORIGINS = List.of(
-            new Origin("Москва · центр", 55.7558, 37.6173),
-            new Origin("Москва · м. ВДНХ", 55.8196, 37.6408),
-            new Origin("Москва · м. Юго-Западная", 55.6631, 37.4829),
-            new Origin("Москва · м. Выхино", 55.7163, 37.8164),
-            new Origin("Казань · центр", 55.7961, 49.1064),
-            new Origin("Казань · м. Козья слобода", 55.8182, 49.0999),
-            new Origin("Казань · м. Горки", 55.7600, 49.1916),
-            new Origin("Казань · м. Проспект Победы", 55.7504, 49.2096));
-
-    public static final Origin MOSCOW_CENTER = ORIGINS.get(0);
-    public static final Origin KAZAN_CENTER = ORIGINS.get(4);
-    public static final String SKIP = "Пропустить";
+    public static final Origin MOSCOW_CENTER = new Origin("Москва · центр", 55.7558, 37.6173);
+    public static final Origin KAZAN_CENTER = new Origin("Казань · центр", 55.7961, 49.1064);
     public static final String GEO_NAME = "По геолокации";
 
     /**
@@ -124,48 +108,28 @@ public class Screens {
     }
 
     /**
-     * Третий и последний вопрос. Город подборки определяется по точке, поэтому
-     * казанец, выбравший Казань, видит казанскую афишу без отдельного вопроса.
+     * Третий и последний вопрос: своя точка — геолокацией или адресом текстом.
+     * Город подборки определяется по ней, поэтому казанец видит казанскую
+     * афишу без отдельного вопроса.
      */
     public String askOrigin() {
-        return """
-                И последнее: **откуда считать расстояние?** Отправь геолокацию или выбери точку кнопкой — по ней же выберу город подборки, Москву или Казань.
-
-                «Пропустить» — буду считать от центра Москвы.""";
+        return "📍 Откуда поедешь? Поделись геолокацией кнопкой ниже или напиши адрес — "
+                + "например, «Казань, Баумана 10» или просто «Москва, Арбат».";
     }
 
-    /**
-     * Геолокация первой строкой — точнее любой кнопки. Точки — кнопками типа
-     * message: нажатие присылает их текст обычным сообщением, и обрабатывать
-     * callback не нужно.
-     */
+    /** Единственная кнопка — геолокация; адрес человек пишет обычным сообщением. */
     public List<List<Button>> originKeyboard() {
-        List<List<Button>> rows = new ArrayList<>();
-        rows.add(List.of(new RequestGeoLocationButton("📍 Отправить геолокацию", null)));
-        for (int i = 0; i < ORIGINS.size(); i += 2) {
-            List<Button> row = new ArrayList<>();
-            for (Origin origin : ORIGINS.subList(i, Math.min(i + 2, ORIGINS.size()))) {
-                row.add(new MessageButton(origin.name()));
-            }
-            rows.add(row);
-        }
-        rows.add(List.of(new MessageButton(SKIP)));
-        return rows;
+        return List.of(List.of(new RequestGeoLocationButton("📍 Отправить геолокацию", null)));
     }
 
-    /** Точка по тексту кнопки; просто «Москва» или «Казань» — центр города. */
-    public Optional<Origin> originByText(String text) {
-        if (text == null) {
-            return Optional.empty();
-        }
-        String t = text.trim().toLowerCase(Locale.ROOT);
-        if (t.equals("москва")) {
-            return Optional.of(MOSCOW_CENTER);
-        }
-        if (t.equals("казань")) {
-            return Optional.of(KAZAN_CENTER);
-        }
-        return ORIGINS.stream().filter(o -> o.name().toLowerCase(Locale.ROOT).equals(t)).findFirst();
+    /** Адрес найден: показываем, что именно, — первое совпадение может быть не тем. */
+    public String addressFound(String name) {
+        return "Нашёл: %s. Считаю расстояние отсюда.".formatted(name);
+    }
+
+    /** Адрес не найден, далеко от обоих городов или геокодер не ответил. */
+    public String addressNotFound() {
+        return "Не нашёл такой адрес в Москве или Казани. Попробуй точнее — улица и дом — или отправь геолокацию.";
     }
 
     /** Ближайший из двух центров — по нему Mini App выбирает город ленты. */
@@ -180,7 +144,7 @@ public class Screens {
         if (originName == null) {
             return "\n\nРасстояние считаю от центра Москвы.";
         }
-        return "\n\nРасстояние считаю от: **%s**. Сменить — пришли геолокацию или нажми другую точку в сообщении выше."
+        return "\n\nРасстояние считаю от: **%s**. Сменить — отправь геолокацию кнопкой из вопроса выше или начни заново: /start."
                 .formatted(originName);
     }
 

@@ -6,10 +6,12 @@ import com.maxbot.eventLoop.domain.AppUser;
 import com.maxbot.eventLoop.domain.DialogState;
 import com.maxbot.eventLoop.gateway.MaxGateway;
 import com.maxbot.eventLoop.gateway.WelcomeImage;
+import com.maxbot.eventLoop.geo.AddressGeocoder;
 import com.maxbot.eventLoop.geo.Haversine;
 import com.maxbot.eventLoop.repo.AppUserRepository;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -28,9 +30,10 @@ import ru.max.botapi.model.Update;
  * где именно потрачено недостающее, знает только держатель карты, и приложению
  * пришлось бы делить остаток наугад.
  *
- * <p>Третий вопрос — откуда считать расстояние. Геолокацию умеет запросить
- * только бот (кнопка request_geo_location), поэтому точка выбирается здесь и
- * уезжает в мини-приложение вместе с суммами; по ней же выбирается город ленты.
+ * <p>Третий вопрос — откуда считать расстояние: геолокация или адрес текстом,
+ * который ищется через Nominatim. Геолокацию умеет запросить только бот
+ * (кнопка request_geo_location), поэтому точка выбирается здесь и уезжает в
+ * мини-приложение вместе с суммами; по ней же выбирается город ленты.
  *
  * <p>Раньше здесь жила лента со свайпами, меню и фильтрами. Их забрало
  * мини-приложение: листать карточки в переписке медленнее, а две реализации
@@ -44,21 +47,30 @@ public class DialogRouter implements UpdateHandler {
 
     private static final Logger log = LoggerFactory.getLogger(DialogRouter.class);
 
+    /** Дальше этого от обоих центров лента пуста при любом фильтре (максимум — 50 км). */
+    private static final double MAX_ORIGIN_KM = 100;
+    /** Длиннее адрес не бывает; простыни в геокодер не уходят. */
+    private static final int MAX_ADDRESS_LENGTH = 200;
+    private static final Pattern LETTER = Pattern.compile("\\p{L}");
+
     private final AppUserRepository users;
     private final Screens screens;
     private final MaxGateway max;
     private final WelcomeImage welcomeImage;
     private final AppProperties properties;
     private final AdminIds admins;
+    private final AddressGeocoder geocoder;
 
     public DialogRouter(AppUserRepository users, Screens screens, MaxGateway max,
-                        WelcomeImage welcomeImage, AppProperties properties, AdminIds admins) {
+                        WelcomeImage welcomeImage, AppProperties properties, AdminIds admins,
+                        AddressGeocoder geocoder) {
         this.users = users;
         this.screens = screens;
         this.max = max;
         this.welcomeImage = welcomeImage;
         this.properties = properties;
         this.admins = admins;
+        this.geocoder = geocoder;
     }
 
     @Override
@@ -116,12 +128,14 @@ public class DialogRouter implements UpdateHandler {
             case AWAITING_CINEMA -> onCinemaInput(user, chatId, text);
             case AWAITING_ORIGIN -> onOriginInput(user, chatId, text, location);
             // Всё названо. Любой текст после этого — повод показать кнопку ещё
-            // раз, а не отчитывать за неправильную команду. Старые кнопки точки
-            // в истории чата остаются живыми, поэтому сменить точку можно в
-            // любой момент — нажатием или новой геолокацией.
+            // раз, а не отчитывать за неправильную команду. Геолокация меняет
+            // точку (кнопка из вопроса остаётся в истории чата). Текст здесь
+            // не геокодируется: Nominatim находит даже «привет» — объект в
+            // Казани, — и точка молча уехала бы. Адрес меняется через /start.
             case READY -> {
-                applyOrigin(user, text, location);
-                users.save(user);
+                if (applyLocation(user, location)) {
+                    users.save(user);
+                }
                 sendMiniApp(user, chatId);
             }
         }
@@ -174,47 +188,79 @@ public class DialogRouter implements UpdateHandler {
         }
     }
 
-    /** Точка отсчёта: геолокация, кнопка-точка или «Пропустить». Иное — переспрашиваем. */
+    /**
+     * Точка отсчёта: геолокация или адрес текстом, который ищется через
+     * Nominatim. Не нашёлся, дальше 100 км от обоих городов или геокодер
+     * не ответил — говорим «не нашёл» и остаёмся на этом шаге.
+     */
     private void onOriginInput(AppUser user, long chatId, String text, LocationAttachment location) {
-        if (applyOrigin(user, text, location)) {
+        if (applyLocation(user, location)) {
             user.setDialogState(DialogState.READY);
             users.save(user);
             sendMiniApp(user, chatId);
-        } else {
-            max.sendText(chatId, screens.askOrigin(), screens.originKeyboard());
+            return;
         }
+        if (text.isEmpty()) {
+            // Стикер, фото или пустое сообщение — просто повторяем вопрос.
+            max.sendText(chatId, screens.askOrigin(), screens.originKeyboard());
+            return;
+        }
+        // Текст без букв (обычно сумма, присланная не туда) и простыни в
+        // геокодер не отправляем: ни то ни другое адресом не будет.
+        if (!LETTER.matcher(text).find() || text.length() > MAX_ADDRESS_LENGTH) {
+            max.sendText(chatId, screens.addressNotFound(), screens.originKeyboard());
+            return;
+        }
+        Optional<AddressGeocoder.Place> place = lookup(text);
+        if (place.isEmpty()) {
+            max.sendText(chatId, screens.addressNotFound(), screens.originKeyboard());
+            return;
+        }
+        AddressGeocoder.Place found = place.get();
+        user.setOrigin(found.name(), round4(found.lat()), round4(found.lon()));
+        user.setDialogState(DialogState.READY);
+        users.save(user);
+        max.sendText(chatId, screens.addressFound(found.name()), null);
+        sendMiniApp(user, chatId);
+    }
+
+    /** Место по адресу; пусто — не найдено, сбой или дальше {@link #MAX_ORIGIN_KM} от обоих городов. */
+    private Optional<AddressGeocoder.Place> lookup(String text) {
+        Optional<AddressGeocoder.Place> place;
+        try {
+            place = geocoder.geocode(text);
+        } catch (RuntimeException e) {
+            // Текст адреса в лог не пишем: он может быть домашним.
+            log.warn("Геокодер упал: {}", e.getClass().getSimpleName());
+            return Optional.empty();
+        }
+        return place.filter(p -> {
+            Screens.Origin center = screens.nearestCenter(p.lat(), p.lon());
+            return Haversine.distanceKm(p.lat(), p.lon(), center.lat(), center.lon()) <= MAX_ORIGIN_KM;
+        });
     }
 
     /**
-     * Распознаёт точку и пишет её в пользователя; false — сообщение не про точку.
-     * Координаты округляются до 4 знаков (~11 м): точнее для «до N км» не нужно,
-     * а лишняя точность — лишние сведения о человеке.
+     * Геолокация из кнопки request_geo_location; false — её нет или координаты
+     * невозможные. Координаты округляются до 4 знаков (~11 м): точнее для
+     * «до N км» не нужно, а лишняя точность — лишние сведения о человеке.
      */
-    private boolean applyOrigin(AppUser user, String text, LocationAttachment location) {
-        if (location != null && location.latitude() >= -90 && location.latitude() <= 90
-                && location.longitude() >= -180 && location.longitude() <= 180) {
-            double lat = location.latitude();
-            double lon = location.longitude();
-            Screens.Origin center = screens.nearestCenter(lat, lon);
-            // Дальше 100 км от обоих городов лента пуста при любом фильтре
-            // (максимум — 50 км), поэтому считаем от центра ближайшего.
-            if (Haversine.distanceKm(lat, lon, center.lat(), center.lon()) > 100) {
-                user.setOrigin(center.name(), center.lat(), center.lon());
-            } else {
-                user.setOrigin(Screens.GEO_NAME, round4(lat), round4(lon));
-            }
-            return true;
+    private boolean applyLocation(AppUser user, LocationAttachment location) {
+        if (location == null || location.latitude() < -90 || location.latitude() > 90
+                || location.longitude() < -180 || location.longitude() > 180) {
+            return false;
         }
-        Optional<Screens.Origin> origin = screens.originByText(text);
-        if (origin.isPresent()) {
-            user.setOrigin(origin.get().name(), origin.get().lat(), origin.get().lon());
-            return true;
+        double lat = location.latitude();
+        double lon = location.longitude();
+        Screens.Origin center = screens.nearestCenter(lat, lon);
+        // Дальше 100 км от обоих городов лента пуста при любом фильтре
+        // (максимум — 50 км), поэтому считаем от центра ближайшего.
+        if (Haversine.distanceKm(lat, lon, center.lat(), center.lon()) > MAX_ORIGIN_KM) {
+            user.setOrigin(center.name(), center.lat(), center.lon());
+        } else {
+            user.setOrigin(Screens.GEO_NAME, round4(lat), round4(lon));
         }
-        if (Screens.SKIP.equalsIgnoreCase(text)) {
-            user.setOrigin(null, null, null);
-            return true;
-        }
-        return false;
+        return true;
     }
 
     private static double round4(double value) {
