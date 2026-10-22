@@ -97,8 +97,8 @@ public class Screens {
         String range = min == max ? "только %d ₽".formatted(max)
                 : min == 0 ? "не больше %d ₽".formatted(max)
                 : "от %d до %d ₽".formatted(min, max);
-        return "При %d ₽ на карте на кино может быть %s: на кино — до %d ₽, на остальное — до %d ₽. Сколько на кино?"
-                .formatted(totalRub, range, properties.cinemaLimitRub(), properties.otherLimitRub());
+        return "При %d ₽ на карте на кино может быть %s. Сколько на кино?"
+                .formatted(totalRub, range);
     }
 
     /** Обе суммы известны — дальше всё делается в мини-приложении. */

@@ -168,8 +168,7 @@ class DialogRouterBalanceTest {
         send("3000");
         send("3000");
         assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_CINEMA);
-        assertThat(lastText()).isEqualTo("При 3000 ₽ на карте на кино может быть не больше 2000 ₽: "
-                + "на кино — до 2000 ₽, на остальное — до 3000 ₽. Сколько на кино?");
+        assertThat(lastText()).isEqualTo("При 3000 ₽ на карте на кино может быть не больше 2000 ₽. Сколько на кино?");
     }
 
     @Test
