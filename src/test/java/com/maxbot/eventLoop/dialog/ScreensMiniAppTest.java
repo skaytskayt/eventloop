@@ -87,6 +87,27 @@ class ScreensMiniAppTest {
     }
 
     /**
+     * Город ленты Mini App выбирает по ближайшему центру из CITIES, бот — по
+     * своим MOSCOW_CENTER и KAZAN_CENTER. Если центры разойдутся, бот и
+     * приложение выберут разные города для одной точки.
+     */
+    @Test
+    @DisplayName("центры городов бота продублированы в Mini App, пресетов там нет")
+    void citiesMirroredInMiniApp() throws IOException {
+        String js = Files.readString(Path.of("src", "main", "resources", "static", "app", "app.js"),
+                StandardCharsets.UTF_8);
+        for (Screens.Origin center : List.of(Screens.MOSCOW_CENTER, Screens.KAZAN_CENTER)) {
+            assertThat(js).as("центр «%s» в app.js", center.name())
+                    .contains(String.valueOf(center.lat()))
+                    .contains(String.valueOf(center.lon()));
+        }
+        assertThat(js)
+                .contains("' · по вашей точке'")
+                .contains("'Москва · центр'")
+                .doesNotContain("ORIGINS");
+    }
+
+    /**
      * Если payload кнопки /stats и STATS_PARAM в app.js разойдутся, Mini App
      * откроется на главном экране, а не на статистике.
      */

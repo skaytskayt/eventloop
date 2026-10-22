@@ -42,7 +42,7 @@ class MiniAppDatasetTest {
                         String city, double venueLat, double venueLon, String startsAt) {
     }
 
-    /** Центры городов — те же, что в app.js (CITIES) и Screens (ORIGINS). */
+    /** Центры городов — те же, что в app.js (CITIES) и Screens (MOSCOW_CENTER, KAZAN_CENTER). */
     private static final double[] MOSCOW = {55.7558, 37.6173};
     private static final double[] KAZAN = {55.7961, 49.1064};
 
