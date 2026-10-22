@@ -132,6 +132,11 @@ public class Screens {
         return "Не нашёл такой адрес в Москве или Казани. Попробуй точнее — улица и дом — или отправь геолокацию.";
     }
 
+    /** /address до того, как назван баланс: анкета идёт по порядку. */
+    public String addressTooEarly() {
+        return "Сначала скажи, сколько на карте, — потом спрошу, откуда поедешь.";
+    }
+
     /** Ближайший из двух центров — по нему Mini App выбирает город ленты. */
     public Origin nearestCenter(double lat, double lon) {
         return List.of(MOSCOW_CENTER, KAZAN_CENTER).stream()
@@ -142,9 +147,9 @@ public class Screens {
     /** Дописка к {@link #ready()}: от чего считается расстояние и как это сменить. */
     public String originNote(String originName) {
         if (originName == null) {
-            return "\n\nРасстояние считаю от центра Москвы.";
+            return "\n\nРасстояние считаю от центра Москвы. Указать свой адрес — /address.";
         }
-        return "\n\nРасстояние считаю от: **%s**. Сменить — отправь геолокацию кнопкой из вопроса выше или начни заново: /start."
+        return "\n\nРасстояние считаю от: **%s**. Сменить адрес — /address."
                 .formatted(originName);
     }
 

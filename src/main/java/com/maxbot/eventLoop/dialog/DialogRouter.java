@@ -122,6 +122,10 @@ public class DialogRouter implements UpdateHandler {
             sendStats(sender.userId(), chatId);
             return;
         }
+        if (text.toLowerCase(Locale.ROOT).startsWith("/address")) {
+            changeAddress(user, chatId);
+            return;
+        }
 
         switch (user.getDialogState()) {
             case NEW, AWAITING_TOTAL -> onTotalInput(user, chatId, text);
@@ -131,7 +135,7 @@ public class DialogRouter implements UpdateHandler {
             // раз, а не отчитывать за неправильную команду. Геолокация меняет
             // точку (кнопка из вопроса остаётся в истории чата). Текст здесь
             // не геокодируется: Nominatim находит даже «привет» — объект в
-            // Казани, — и точка молча уехала бы. Адрес меняется через /start.
+            // Казани, — и точка молча уехала бы. Адрес меняется через /address.
             case READY -> {
                 if (applyLocation(user, location)) {
                     users.save(user);
@@ -139,6 +143,21 @@ public class DialogRouter implements UpdateHandler {
                 sendMiniApp(user, chatId);
             }
         }
+    }
+
+    /**
+     * Сменить точку, не вводя баланс заново: возвращаемся на вопрос про точку,
+     * суммы остаются. Пока баланс не назван, точку спрашивать рано — анкета
+     * идёт своим порядком.
+     */
+    private void changeAddress(AppUser user, long chatId) {
+        if (user.getDialogState() != DialogState.READY && user.getDialogState() != DialogState.AWAITING_ORIGIN) {
+            max.sendText(chatId, screens.addressTooEarly(), null);
+            return;
+        }
+        user.setDialogState(DialogState.AWAITING_ORIGIN);
+        users.save(user);
+        max.sendText(chatId, screens.askOrigin(), screens.originKeyboard());
     }
 
     private void restart(AppUser user, long chatId) {

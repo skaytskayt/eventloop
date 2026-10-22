@@ -61,9 +61,10 @@ public class StartupCheck implements ApplicationRunner {
      * а не только в тексте приветствия.
      */
     private void publishCommands() {
-        // Команда одна: бот спрашивает баланс и отдаёт ссылку на приложение.
+        // /stats здесь нет намеренно: она админская и чужим не видна.
         List<BotCommand> commands = List.of(
-                new BotCommand("start", "указать баланс и открыть подборку"));
+                new BotCommand("start", "указать баланс и открыть подборку"),
+                new BotCommand("address", "сменить адрес, от которого считается расстояние"));
         try {
             api.editMyCommands(new BotCommandsPatch(commands)).execute();
             log.info("Команды бота опубликованы: {}",
