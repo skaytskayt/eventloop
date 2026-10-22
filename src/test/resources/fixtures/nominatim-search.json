@@ -1,0 +1,23 @@
+[
+  {
+    "place_id": 211845733,
+    "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+    "osm_type": "way",
+    "osm_id": 52374110,
+    "lat": "55.7934295",
+    "lon": "49.1098114",
+    "category": "building",
+    "type": "yes",
+    "place_rank": 30,
+    "importance": 0.00007,
+    "addresstype": "building",
+    "name": "",
+    "display_name": "7/10, улица Баумана, Старо-Татарская слобода, Вахитовский район, Казань, городской округ Казань, Татарстан, Приволжский федеральный округ, 420111, Россия",
+    "boundingbox": [
+      "55.7932507",
+      "55.7936083",
+      "49.1095112",
+      "49.1101116"
+    ]
+  }
+]
