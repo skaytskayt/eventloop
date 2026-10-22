@@ -1,6 +1,8 @@
 package com.maxbot.eventLoop.miniapp;
 
 import com.maxbot.eventLoop.config.AdminIds;
+import com.maxbot.eventLoop.domain.DialogState;
+import com.maxbot.eventLoop.repo.AppUserRepository;
 import java.util.List;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -29,11 +31,32 @@ public class MiniAppController {
     private final InitDataVerifier verifier;
     private final MiniAppStore store;
     private final AdminIds admins;
+    private final AppUserRepository users;
 
-    public MiniAppController(InitDataVerifier verifier, MiniAppStore store, AdminIds admins) {
+    public MiniAppController(InitDataVerifier verifier, MiniAppStore store, AdminIds admins,
+                             AppUserRepository users) {
         this.verifier = verifier;
         this.store = store;
         this.admins = admins;
+        this.users = users;
+    }
+
+    /** Прошёл ли человек анкету в боте: без неё у приложения нет ни баланса, ни точки. */
+    public record Me(boolean registered) {
+    }
+
+    @GetMapping("/api/me")
+    public ResponseEntity<Me> me(
+            @RequestHeader(value = INIT_DATA, required = false) String initData) {
+        OptionalLong userId = verifier.userId(initData);
+        if (userId.isEmpty()) {
+            log.debug("Запрос профиля без валидной подписи initData");
+            return ResponseEntity.status(401).build();
+        }
+        boolean registered = users.findByMaxUserId(userId.getAsLong())
+                .map(u -> u.getDialogState() == DialogState.READY)
+                .orElse(false);
+        return ResponseEntity.ok(new Me(registered));
     }
 
     /**

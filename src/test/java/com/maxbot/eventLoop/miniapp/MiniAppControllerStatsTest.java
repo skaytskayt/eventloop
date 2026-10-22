@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.maxbot.eventLoop.config.AdminIds;
+import com.maxbot.eventLoop.repo.AppUserRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.OptionalLong;
@@ -37,7 +38,7 @@ class MiniAppControllerStatsTest {
     }
 
     private MiniAppController controller(String adminIds) {
-        return new MiniAppController(verifier, store, new AdminIds(adminIds));
+        return new MiniAppController(verifier, store, new AdminIds(adminIds), mock(AppUserRepository.class));
     }
 
     @Test
