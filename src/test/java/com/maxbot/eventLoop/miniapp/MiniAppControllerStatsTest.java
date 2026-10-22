@@ -9,6 +9,7 @@ import com.maxbot.eventLoop.config.AdminIds;
 import com.maxbot.eventLoop.repo.AppUserRepository;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,7 +39,7 @@ class MiniAppControllerStatsTest {
     }
 
     private MiniAppController controller(String adminIds) {
-        return new MiniAppController(verifier, store, new AdminIds(adminIds), mock(AppUserRepository.class));
+        return new MiniAppController(verifier, store, new AdminIds(adminIds), mock(AppUserRepository.class), q -> Optional.empty(), null);
     }
 
     @Test

@@ -1,9 +1,14 @@
 package com.maxbot.eventLoop.miniapp;
 
 import com.maxbot.eventLoop.config.AdminIds;
+import com.maxbot.eventLoop.dialog.Screens;
+import com.maxbot.eventLoop.domain.AppUser;
 import com.maxbot.eventLoop.domain.DialogState;
+import com.maxbot.eventLoop.geo.AddressGeocoder;
+import com.maxbot.eventLoop.geo.Haversine;
 import com.maxbot.eventLoop.repo.AppUserRepository;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -32,13 +37,92 @@ public class MiniAppController {
     private final MiniAppStore store;
     private final AdminIds admins;
     private final AppUserRepository users;
+    private final AddressGeocoder geocoder;
+    private final Screens screens;
 
     public MiniAppController(InitDataVerifier verifier, MiniAppStore store, AdminIds admins,
-                             AppUserRepository users) {
+                             AppUserRepository users, AddressGeocoder geocoder, Screens screens) {
         this.verifier = verifier;
         this.store = store;
         this.admins = admins;
         this.users = users;
+        this.geocoder = geocoder;
+        this.screens = screens;
+    }
+
+    /** Новая точка из профиля: адрес текстом или координаты с телефона. */
+    public record OriginRequest(String address, Double lat, Double lon) {
+    }
+
+    /** Сохранённая точка — её имя показывается в профиле. */
+    public record OriginResponse(String name, double lat, double lon) {
+    }
+
+    private static final double MAX_ORIGIN_KM = 100;
+    private static final Pattern LETTER = Pattern.compile("\\p{L}");
+
+    /**
+     * Смена точки из профиля мини-приложения — то же, что /address в боте:
+     * сохраняется в app_user, и следующая кнопка бота понесёт новую точку.
+     * Правила те же: дальше 100 км от обоих городов адрес не принимаем, а
+     * геолокацию оттуда заменяем центром ближайшего — иначе лента пуста.
+     * 404 — адрес не нашёлся, 409 — анкета в боте не пройдена.
+     */
+    @PostMapping("/api/me/origin")
+    public ResponseEntity<OriginResponse> origin(
+            @RequestHeader(value = INIT_DATA, required = false) String initData,
+            @RequestBody OriginRequest request) {
+        OptionalLong userId = verifier.userId(initData);
+        if (userId.isEmpty()) {
+            log.debug("Смена точки без валидной подписи initData");
+            return ResponseEntity.status(401).build();
+        }
+        AppUser user = users.findByMaxUserId(userId.getAsLong()).orElse(null);
+        if (user == null || user.getDialogState() != DialogState.READY) {
+            return ResponseEntity.status(409).build();
+        }
+        Screens.Origin point;
+        if (request.lat() != null && request.lon() != null) {
+            double lat = request.lat();
+            double lon = request.lon();
+            if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+                return ResponseEntity.badRequest().build();
+            }
+            Screens.Origin center = screens.nearestCenter(lat, lon);
+            point = Haversine.distanceKm(lat, lon, center.lat(), center.lon()) > MAX_ORIGIN_KM
+                    ? center
+                    : new Screens.Origin(Screens.GEO_NAME, round4(lat), round4(lon));
+        } else {
+            String address = request.address() == null ? "" : request.address().trim();
+            if (!LETTER.matcher(address).find() || address.length() > 200) {
+                return ResponseEntity.status(404).build();
+            }
+            Optional<AddressGeocoder.Place> place;
+            try {
+                place = geocoder.geocode(address);
+            } catch (RuntimeException e) {
+                // Адрес в лог не пишем: он может быть домашним.
+                log.warn("Геокодер упал: {}", e.getClass().getSimpleName());
+                place = Optional.empty();
+            }
+            Optional<Screens.Origin> found = place
+                    .filter(p -> {
+                        Screens.Origin c = screens.nearestCenter(p.lat(), p.lon());
+                        return Haversine.distanceKm(p.lat(), p.lon(), c.lat(), c.lon()) <= MAX_ORIGIN_KM;
+                    })
+                    .map(p -> new Screens.Origin(p.name(), round4(p.lat()), round4(p.lon())));
+            if (found.isEmpty()) {
+                return ResponseEntity.status(404).build();
+            }
+            point = found.get();
+        }
+        user.setOrigin(point.name(), point.lat(), point.lon());
+        users.save(user);
+        return ResponseEntity.ok(new OriginResponse(point.name(), point.lat(), point.lon()));
+    }
+
+    private static double round4(double value) {
+        return Math.round(value * 10000) / 10000.0;
     }
 
     /** Прошёл ли человек анкету в боте: без неё у приложения нет ни баланса, ни точки. */
