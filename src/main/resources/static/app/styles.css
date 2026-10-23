@@ -997,7 +997,18 @@ body.is-dark .nav__item.is-on { color: var(--lilac); }
 .swipe-hint--like { left: 16px; background: var(--violet); color: #fff; }
 .swipe-hint--skip { right: 16px; background: #fff; color: var(--ink); }
 .bigcard.to-like .swipe-hint--like,
-.bigcard.to-skip .swipe-hint--skip { opacity: 1; transform: scale(1); }
+.bigcard.to-skip .swipe-hint--skip,
+.swipecard.to-like .swipe-hint--like,
+.swipecard.to-skip .swipe-hint--skip { opacity: 1; transform: scale(1); }
+
+/* Ответ кнопкой: кнопка пружинит, следующая карточка выезжает снизу. */
+.btn.is-pressed, .skip-pill.is-pressed { animation: btn-press .26s ease; }
+@keyframes btn-press { 40% { transform: scale(.92); } 100% { transform: scale(1); } }
+.bigcard.is-entering, .swipecard.is-entering { animation: card-enter .34s cubic-bezier(.2, .8, .2, 1); }
+@keyframes card-enter { from { opacity: 0; transform: translateY(18px) scale(.97); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .btn.is-pressed, .skip-pill.is-pressed, .bigcard.is-entering, .swipecard.is-entering { animation: none; }
+}
 
 .lead__hint {
   display: flex;

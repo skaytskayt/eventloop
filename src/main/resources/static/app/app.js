@@ -722,13 +722,13 @@
     like.type = 'button';
     like.appendChild(icon('heart-fill', 18));
     like.appendChild(el('span', null, 'Пойду'));
-    like.addEventListener('click', function () { react(item, 'liked'); });
+    like.addEventListener('click', function () { throwCard(like, item, 'liked'); });
 
     var no = el('button', 'btn btn--no');
     no.type = 'button';
     no.appendChild(icon('close', 18));
     no.appendChild(el('span', null, 'Не нравится'));
-    no.addEventListener('click', function () { react(item, 'disliked'); });
+    no.addEventListener('click', function () { throwCard(no, item, 'disliked'); });
 
     box.appendChild(no);
     box.appendChild(like);
@@ -744,6 +744,8 @@
   var ACTION = { liked: 'LIKE', saved: 'SAVE', disliked: 'DISLIKE' };
 
   function react(item, kind) {
+    // Следующая карточка выезжает, а не появляется рывком.
+    state.entering = true;
     state.undo.push(item.eventId);
     if (state.undo.length > 30) { state.undo.shift(); }
     mark(item, kind);
@@ -955,7 +957,7 @@
     var item = list[state.index];
     // render() рисует подборку и под приветствием — просмотр только на её экране.
     if (state.screen === 'screen-feed') { viewed(item); }
-    var card = el('article', 'bigcard');
+    var card = el('article', 'bigcard' + (state.entering ? ' is-entering' : ''));
 
     var ph = photo(item, 'bigcard__photo');
     ph.appendChild(el('span', 'counter', shown + '/' + total));
@@ -991,8 +993,34 @@
     b.type = 'button';
     b.appendChild(icon('star', 16));
     b.appendChild(el('span', null, 'Отложить'));
-    b.addEventListener('click', function () { react(item, 'saved'); });
+    b.addEventListener('click', function () { throwCard(b, item, 'saved'); });
     return b;
+  }
+
+  /* Кнопки под карточкой ведут себя как свайп: метка «Пойду» или «Не
+   * нравится», карточка улетает в ту же сторону, «Отложить» — вверх.
+   * Без этого карточка просто подменялась, и нажатие не читалось как ответ.
+   * Вне колоды (открытая карточка) и при «меньше движения» — сразу. */
+  var THROW = {
+    liked: { cls: 'to-like', transform: 'translateX(115%) rotate(14deg)' },
+    disliked: { cls: 'to-skip', transform: 'translateX(-115%) rotate(-14deg)' },
+    saved: { cls: null, transform: 'translateY(-60px) scale(.9)' }
+  };
+
+  function throwCard(button, item, kind) {
+    var card = button.closest('.bigcard, .swipecard');
+    if (!card || reducedMotion()) { react(item, kind); return; }
+    if (card.classList.contains('is-thrown')) { return; }
+    card.classList.add('is-thrown');
+    button.classList.add('is-pressed');
+    var t = THROW[kind];
+    if (t.cls) { card.classList.add(t.cls); }
+    setTimeout(function () {
+      card.style.transition = 'transform .32s cubic-bezier(.4, 0, .9, .6), opacity .28s ease';
+      card.style.transform = t.transform;
+      card.style.opacity = '0';
+    }, 140);
+    setTimeout(function () { react(item, kind); }, 420);
   }
 
   /* Маршрут в Яндекс Картах на общественном транспорте. Без точки из бота
@@ -1039,7 +1067,7 @@
     counter.textContent = shown + '/' + total;
     bar.style.width = Math.round(shown / total * 100) + '%';
 
-    var card = el('article', 'swipecard');
+    var card = el('article', 'swipecard' + (state.entering ? ' is-entering' : ''));
     var ph = photo(item, 'swipecard__photo');
 
     // На макете бейдж, заголовок и дата лежат поверх фотографии, а не под ней.
@@ -2037,6 +2065,7 @@
     renderFavorites();
     renderProfile();
     renderDetail();
+    state.entering = false;
     syncStats();
   }
 
