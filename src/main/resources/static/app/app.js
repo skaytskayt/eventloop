@@ -1386,11 +1386,11 @@
   function walletEdit(code, left) {
     if (state.editWallet === code) { return walletField(code, left); }
 
-    var pencil = el('button', 'wallet__pencil');
+    var pencil = el('button', 'btn btn--ghost wallet__change');
     pencil.type = 'button';
-    pencil.title = 'Изменить баланс';
     pencil.setAttribute('aria-label', 'Изменить баланс: ' + WALLETS[code].title);
     pencil.appendChild(icon('pencil', 14));
+    pencil.appendChild(el('span', null, 'Изменить'));
     // Поле подставляется на место карандаша, а фокус берётся прямо в
     // обработчике нажатия: focus() после перерисовки или из setTimeout
     // мобильные браузеры игнорируют и клавиатуру не показывают.
@@ -1636,8 +1636,11 @@
     // Описание и кнопки тоже на карточке — всё про событие в одном месте.
     head.appendChild(el('h2', 'detail__h2', 'О мероприятии'));
     head.appendChild(el('p', 'detail__text', item.summary));
-    head.appendChild(actions(item));
-    head.appendChild(saveButton(item));
+    // Билет уже куплен — оценивать нечего, остаётся только дорога.
+    if (!isBought(item.eventId)) {
+      head.appendChild(actions(item));
+      head.appendChild(saveButton(item));
+    }
     head.appendChild(routeButton(item));
     card.appendChild(head);
 
