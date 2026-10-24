@@ -198,6 +198,17 @@
     m.classList.toggle('is-error', !!isError);
   }
 
+  function openOrigin() {
+    originMsg('', false);
+    document.getElementById('origin-input').value = '';
+    document.getElementById('origin-dialog').hidden = false;
+    document.getElementById('origin-input').focus();
+  }
+
+  function closeOrigin() {
+    document.getElementById('origin-dialog').hidden = true;
+  }
+
   function originBusy(on) {
     document.getElementById('origin-find').disabled = on;
     document.getElementById('origin-geo').disabled = on;
@@ -223,8 +234,7 @@
         save();
         // Город и расстояния зависят от точки — пересчитываем подборку.
         prepareFeed();
-        document.getElementById('origin-input').value = '';
-        originMsg('', false);
+        closeOrigin();
         render();
         toast('Считаю расстояние от: ' + originLabel());
       })
@@ -1335,7 +1345,7 @@
       originLabel() + ' — от этой точки считается расстояние.'
       + (INIT ? '' : ' Сменить можно в боте: /address.');
     // Без подписи MAX сервер не узнает, чью точку менять.
-    document.getElementById('origin-edit').hidden = !INIT;
+    document.getElementById('origin-open').hidden = !INIT;
 
     renderWallets();
     renderBought();
@@ -2203,6 +2213,14 @@
   document.getElementById('register-bot').addEventListener('click', openBot);
   document.getElementById('origin-edit').addEventListener('submit', onOriginSubmit);
   document.getElementById('origin-geo').addEventListener('click', onOriginGeo);
+  document.getElementById('origin-open').addEventListener('click', openOrigin);
+  document.getElementById('origin-cancel').addEventListener('click', closeOrigin);
+  document.getElementById('origin-dialog').addEventListener('click', function (e) {
+    if (e.target === e.currentTarget) { closeOrigin(); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !document.getElementById('origin-dialog').hidden) { closeOrigin(); }
+  });
   render();
   // Вкладку могли закрыть, не ответив: незаданный вопрос ждёт в хранилище.
   // На статистике не спрашиваем: модальное окно закрыло бы доску на защите,
