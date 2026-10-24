@@ -116,7 +116,7 @@ class DialogRouterBalanceTest {
     void startAsksTotal() {
         send("/start");
         assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_TOTAL);
-        assertThat(lastCardText()).contains("Сколько всего на карте?").contains("вправо");
+        assertThat(lastCardText()).contains("Сколько всего денег на карте?").contains("вправо");
     }
 
     @Test

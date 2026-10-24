@@ -164,13 +164,11 @@ class ScreensMiniAppTest {
     void welcomeExplainsHowItWorks() {
         String welcome = screens("test_bot").welcome();
         assertThat(welcome)
-                .contains("подборку")
                 .contains("вправо")
-                .contains("останется на карте")
-                .contains("Купить билет")
-                .contains("фильтры")
+                .contains("Отложить")
+                .contains("Потратить весь баланс")
                 .contains("на кино")
-                .contains("Сколько всего на карте?");
+                .contains("Сколько всего денег на карте?");
     }
 
     @Test
