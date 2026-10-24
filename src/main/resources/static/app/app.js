@@ -620,7 +620,9 @@
       fetch(API + '/api/actions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Init-Data': INIT },
-        body: JSON.stringify({ eventId: item.eventId, action: action, priceRub: item.priceRub, category: item.category, city: item.city }),
+        // Дата и название — для напоминания об отложенном: ленту сервер не знает.
+        body: JSON.stringify({ eventId: item.eventId, action: action, priceRub: item.priceRub, category: item.category, city: item.city,
+          startsAt: item.startsAt, title: item.title }),
         // «Купить билет» уводит на сайт кассы — запрос должен это пережить.
         keepalive: true
       }).catch(function () { /* сеть — не повод мешать свайпу */ });

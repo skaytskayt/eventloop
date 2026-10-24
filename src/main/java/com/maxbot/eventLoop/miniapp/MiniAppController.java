@@ -7,6 +7,7 @@ import com.maxbot.eventLoop.domain.DialogState;
 import com.maxbot.eventLoop.geo.AddressGeocoder;
 import com.maxbot.eventLoop.geo.Haversine;
 import com.maxbot.eventLoop.repo.AppUserRepository;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -148,7 +149,12 @@ public class MiniAppController {
      * Jackson его оборачивает, и Spring отвечает 400.
      */
     public record ActionRequest(int eventId, MiniAppAction action, int priceRub, String category,
-                                String city) {
+                                String city, OffsetDateTime startsAt, String title) {
+
+        /** Старый клиент без даты и названия: напоминаний для таких действий не будет. */
+        public ActionRequest(int eventId, MiniAppAction action, int priceRub, String category, String city) {
+            this(eventId, action, priceRub, category, city, null, null);
+        }
 
         private static final Pattern CATEGORY = Pattern.compile("^[A-Z_]{1,32}$");
         private static final Set<String> CITIES = Set.of("moscow", "kazan");
@@ -168,6 +174,9 @@ public class MiniAppController {
             }
             if (city != null && !CITIES.contains(city)) {
                 throw new IllegalArgumentException("неизвестный город");
+            }
+            if (title != null && title.length() > 300) {
+                throw new IllegalArgumentException("название длиннее 300 символов");
             }
         }
     }
