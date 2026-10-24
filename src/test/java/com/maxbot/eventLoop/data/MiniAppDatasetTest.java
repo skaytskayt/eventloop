@@ -149,7 +149,7 @@ class MiniAppDatasetTest {
     @Test
     @DisplayName("ссылка ведёт на страницу мероприятия у оператора")
     void everyCardLinksToItsEventPage() {
-        assertThat(cards).allSatisfy(card -> {
+        assertThat(cards).filteredOn(card -> !"CINEMA".equals(card.category())).allSatisfy(card -> {
             String host = hostOf(card.city());
             assertThat(card.ticketUrl())
                     .as("ссылка карточки «%s»", card.title())
@@ -161,6 +161,18 @@ class MiniAppDatasetTest {
                     .as("путь карточки «%s»", card.title())
                     .hasSize(3);
         });
+    }
+
+    /** Кино — из «Синема 5»: страница фильма своего города, якорь — кинотеатр. */
+    @Test
+    @DisplayName("кино ведёт на страницу фильма в «Синема 5» и в нём есть фильмы обоих городов")
+    void cinemaLinksToMoviePage() {
+        List<Card> films = cards.stream().filter(card -> "CINEMA".equals(card.category())).toList();
+        assertThat(films).extracting(Card::city).contains("moscow", "kazan");
+        assertThat(films).allSatisfy(card -> assertThat(card.ticketUrl())
+                .as("ссылка фильма «%s»", card.title())
+                .matches("https://cinema5\\.ru/" + ("kazan".equals(card.city()) ? "kazan" : "moskva")
+                        + "/movie/[a-z0-9-]+#cinema-\\d+"));
     }
 
     @Test

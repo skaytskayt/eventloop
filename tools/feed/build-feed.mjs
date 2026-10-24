@@ -4,7 +4,7 @@
  * Источник — раздел Пушкинской карты билетного оператора
  * (www.ticketland.ru и kzn.ticketland.ru), тот же, что разбирает
  * TicketlandParser на бэкенде: читаются блоки schema.org/Event в JSON-LD,
- * а не вёрстка. На выходе — src/main/resources/static/app/data.js, афиши
+ * а не вёрстка. Кино — из раздела Пушкинской карты «Синема 5» (см. crawlCinema). На выходе — src/main/resources/static/app/data.js, афиши
  * в assets/events/ и их источники в assets/events/CREDITS.md.
  *
  * Запуск из корня репозитория (нужна сеть, npm install не нужен):
@@ -50,10 +50,19 @@ const CITIES = {
   kazan: { host: 'kzn.ticketland.ru', title: 'Казань', lat: 55.7961, lon: 49.1064 }
 };
 /*
- * Не больше 80 событий на город: копия Mini App лежит и в git, и на
- * GitHub Pages, а афиша — около 37 КБ. Для ленты свайпов этого с запасом.
+ * Не больше 200 событий на город, не считая кино: копия Mini App лежит и в
+ * git, и на GitHub Pages, а одна афиша — около 30 КБ.
  */
-const LIMIT_PER_CITY = 80;
+const LIMIT_PER_CITY = 200;
+
+/*
+ * Кино по Пушкинской карте — у сети «Синема 5»: у Ticketland его нет вовсе.
+ * Страницы — Nuxt, данные лежат в __NUXT_DATA__ (фильмы, сеансы с ценой,
+ * кинотеатры с координатами). Событие — пара «фильм + кинотеатр» с ближайшим
+ * сеансом; /api/** и страницы с датой закрыты robots.txt, их не трогаем.
+ */
+const CINEMA_HOST = 'https://cinema5.ru';
+const CINEMA_CITY = { moscow: 'moskva', kazan: 'kazan' };
 const WALLET_LIMIT = { CINEMA: 2000, OTHER: 3000 };
 const MAX_VENUE_KM = 60;
 const MAX_PAGES = 40;
@@ -260,6 +269,101 @@ function toEvents(sessions, report, now) {
   return [...byUrl.values()];
 }
 
+/* Nuxt хранит состояние плоским массивом со ссылками по индексу (devalue). */
+function nuxtData(html) {
+  const m = /<script[^>]*id="__NUXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(html);
+  if (!m) return null;
+  const arr = JSON.parse(m[1]);
+  const WRAP = new Set(['Reactive', 'ShallowReactive', 'Ref', 'ShallowRef', 'EmptyRef', 'EmptyShallowRef', 'Set', 'Map', 'Date', 'NuxtError', 'Island', 'JSON']);
+  const cache = new Map();
+  const at = (i) => {
+    if (typeof i !== 'number' || i < 0) return undefined;
+    if (cache.has(i)) return cache.get(i);
+    const v = arr[i];
+    if (v === null || typeof v !== 'object') { cache.set(i, v); return v; }
+    if (Array.isArray(v)) {
+      if (typeof v[0] === 'string' && WRAP.has(v[0])) { const r = at(v[1]); cache.set(i, r); return r; }
+      const out = [];
+      cache.set(i, out);
+      v.forEach((x) => out.push(at(x)));
+      return out;
+    }
+    const o = {};
+    cache.set(i, o);
+    for (const k of Object.keys(v)) o[k] = at(v[k]);
+    return o;
+  };
+  return at(0);
+}
+
+async function crawlCinema(cityCode, report) {
+  const slug = CINEMA_CITY[cityCode];
+  const listing = nuxtData(await fetchText(CINEMA_HOST + '/' + slug + '/pushkins-card', BROWSER_UA));
+  const state = (listing && listing.state) || {};
+  const page = state['$s/' + slug + '/pushkins-card'];
+  const movies = (page && page.items || []).filter((m) => m && m.pushkinsCard && m.slug);
+  const cinemas = new Map();
+  const cinemaState = state['$s' + slug + '-cinemas'];
+  for (const c of (cinemaState && cinemaState.items) || []) {
+    if (c && c.id != null) cinemas.set(c.id, c);
+  }
+  const out = [];
+  for (const m of movies) {
+    await sleep(PAUSE_PAGE_MS);
+    const url = CINEMA_HOST + '/' + slug + '/movie/' + m.slug;
+    let item;
+    try {
+      const data = nuxtData(await fetchText(url, BROWSER_UA));
+      item = data && data.state && data.state['$s' + m.slug] && data.state['$s' + m.slug].item;
+    } catch (e) {
+      report.drop('страница фильма не открылась');
+      continue;
+    }
+    if (!item || !item.pushkinsCard) { report.drop('фильм без Пушкинской карты'); continue; }
+    // Сеансы по кинотеатрам: ближайший будущий и сколько их всего.
+    const byCinema = new Map();
+    for (const d of item.dates || []) {
+      for (const c of (d && d.cinemas) || []) {
+        for (const s of (c && c.shows) || []) {
+          if (!s || !s.datetime || !(s.minPrice > 0)) continue;
+          const startsAt = s.datetime.replace(' ', 'T') + ':00+03:00';
+          if (new Date(startsAt).getTime() < Date.now()) continue;
+          const prev = byCinema.get(s.cinemaId);
+          if (!prev) byCinema.set(s.cinemaId, { startsAt, price: s.minPrice, count: 1 });
+          else {
+            prev.count++;
+            if (startsAt < prev.startsAt) Object.assign(prev, { startsAt, price: s.minPrice });
+          }
+        }
+      }
+    }
+    for (const [cinemaId, show] of byCinema) {
+      const c = cinemas.get(cinemaId);
+      if (!c || !c.latitude || !c.longitude) { report.drop('кинотеатр без координат'); continue; }
+      if (show.price > WALLET_LIMIT.CINEMA) { report.drop('дороже кошелька'); continue; }
+      out.push({
+        city: cityCode,
+        title: decodeEntities(item.name),
+        image: item.vposter || m.vposter || null,
+        description: decodeEntities(item.description),
+        keywords: (item.genres || []).join(', '),
+        venueName: decodeEntities(c.name),
+        cinemaAddress: decodeEntities(String(c.address || '').replace(/^г\.\s*[^,]+,\s*/, '')),
+        cinemaLat: Number(c.latitude),
+        cinemaLon: Number(c.longitude),
+        // Якорь различает кинотеатры: ticketUrl — ключ в ids.json.
+        ticketUrl: url + '#cinema-' + cinemaId,
+        startsAt: show.startsAt,
+        category: 'CINEMA',
+        priceRub: show.price,
+        sessionCount: show.count
+      });
+    }
+  }
+  report.cinema = out.length;
+  return out;
+}
+
 function nominatimAddress(hit, cityTitle) {
   const a = hit.address || {};
   if (a.road && a.house_number) return a.road + ', ' + a.house_number;
@@ -407,6 +511,7 @@ function sessionsPhrase(n) {
 }
 
 function summaryOf(e) {
+  if (e.description) return e.description + ' ' + e.venueName + ', ' + e.venueAddress + '. ' + sessionsPhrase(e.sessionCount);
   const kw = e.keywords ? e.keywords.charAt(0).toUpperCase() + e.keywords.slice(1).toLowerCase() + '. ' : '';
   const place = e.venueAddress ? e.venueName + ', ' + e.venueAddress : e.venueName;
   return kw + place + '. ' + sessionsPhrase(e.sessionCount);
@@ -434,9 +539,9 @@ function renderDataJs(events, today) {
  * Афиши лежат локально в assets/events/ — Mini App не ходит во внешнюю сеть;
  * источники — в CREDITS.md.
  *
- * Чего здесь нет: кино. В разделе Пушкинской карты у этого оператора его нет
- * вовсе, поэтому кошелёк «Кино» в профиле останется нетронутым — это свойство
- * источника, а не ошибка.
+ * Кино — из раздела Пушкинской карты сети «Синема 5» (cinema5.ru): у
+ * Ticketland его нет. Одно событие — фильм в одном кинотеатре с ближайшим
+ * сеансом; цена — минимальная на этом сеансе.
  */
 const MOCK_EVENTS = [
 `;
@@ -474,7 +579,8 @@ function renderCredits(events) {
   return `# Афиши мероприятий
 
 Файлы в этой папке — рекламные афиши мероприятий, скачанные вместе с самой
-афишей со страниц билетного оператора ticketland.ru. Свободной лицензии у них
+афишей со страниц билетного оператора ticketland.ru, а постеры фильмов — со
+страниц кинотеатров «Синема 5» (cinema5.ru). Свободной лицензии у них
 нет: права принадлежат организаторам. Копии лежат локально, потому что Mini App
 обязан работать без внешней сети, и используются в некоммерческом демо со
 ссылкой на страницу мероприятия у оператора.
@@ -514,6 +620,12 @@ async function main() {
     reports[cityCode].events = events.length;
     all = all.concat(events);
     await sleep(PAUSE_PAGE_MS);
+    const films = await crawlCinema(cityCode, reports[cityCode]);
+    // Координаты кинотеатров дал сам источник — Nominatim не нужен.
+    for (const f of films) {
+      venues[f.city + '|' + f.venueName] = { address: f.cinemaAddress, lat: Number(f.cinemaLat.toFixed(4)), lon: Number(f.cinemaLon.toFixed(4)), source: 'cinema5' };
+    }
+    all = all.concat(films);
   }
 
   const missing = await resolveVenues(all, venues, previous);
@@ -541,7 +653,10 @@ async function main() {
   mkdirSync(EVENTS_DIR, { recursive: true });
   let final = [];
   for (const cityCode of Object.keys(CITIES)) {
-    const picked = select(located.filter((e) => e.city === cityCode), previousUrls);
+    // Кино — сверх лимита: фильмов по карте немного, и терять их в круге площадок жалко.
+    const inCity = located.filter((e) => e.city === cityCode);
+    const picked = select(inCity.filter((e) => e.category !== 'CINEMA'), previousUrls)
+      .concat(inCity.filter((e) => e.category === 'CINEMA'));
     for (const e of picked) {
       if (await ensurePhoto(e, previousByUrl)) final.push(e);
       else reports[cityCode].drop('афиша не скачалась');
@@ -566,7 +681,7 @@ async function main() {
     const inFeed = final.filter((e) => e.city === cityCode);
     const venuesCount = new Set(inFeed.map((e) => e.venueName)).size;
     console.log('  ' + CITIES[cityCode].title + ': страниц ' + r.pages + ', сеансов ' + r.sessions
-      + ', событий ' + r.events + ', в ленте ' + inFeed.length + ' (площадок ' + venuesCount + ')');
+      + ', событий ' + r.events + ', кино ' + (r.cinema || 0) + ', в ленте ' + inFeed.length + ' (площадок ' + venuesCount + ')');
     if (r.malformed) console.log('    нечитаемых блоков JSON-LD: ' + r.malformed);
     for (const [reason, n] of Object.entries(r.dropped)) console.log('    отброшено — ' + reason + ': ' + n);
   }
