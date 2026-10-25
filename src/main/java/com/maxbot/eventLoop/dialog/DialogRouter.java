@@ -211,8 +211,8 @@ public class DialogRouter implements UpdateHandler {
 
     /**
      * Точка отсчёта: геолокация или адрес текстом, который ищется через
-     * Nominatim. Не нашёлся, дальше 100 км от обоих городов или геокодер
-     * не ответил — говорим «не нашёл» и остаёмся на этом шаге.
+     * Nominatim. Не нашёлся или геокодер не ответил — говорим «не нашёл»;
+     * другой город — что проект пока пилотный. В обоих случаях остаёмся на этом шаге.
      */
     private void onOriginInput(AppUser user, long chatId, String text, LocationAttachment location) {
         if (applyLocation(user, location)) {
@@ -238,6 +238,10 @@ public class DialogRouter implements UpdateHandler {
             return;
         }
         AddressGeocoder.Place found = place.get();
+        if (tooFar(found)) {
+            max.sendText(chatId, screens.outsidePilot(), screens.originKeyboard());
+            return;
+        }
         if (found.coarse()) {
             max.sendText(chatId, screens.addressTooBroad(found.name()), screens.originKeyboard());
             return;
@@ -249,7 +253,7 @@ public class DialogRouter implements UpdateHandler {
         sendMiniApp(user, chatId);
     }
 
-    /** Место по адресу; пусто — не найдено, сбой или дальше {@link #MAX_ORIGIN_KM} от обоих городов. */
+    /** Место по адресу; пусто — не найдено или сбой. */
     private Optional<AddressGeocoder.Place> lookup(String text) {
         Optional<AddressGeocoder.Place> place;
         try {
@@ -259,10 +263,13 @@ public class DialogRouter implements UpdateHandler {
             log.warn("Геокодер упал: {}", e.getClass().getSimpleName());
             return Optional.empty();
         }
-        return place.filter(p -> {
-            Screens.Origin center = screens.nearestCenter(p.lat(), p.lon());
-            return Haversine.distanceKm(p.lat(), p.lon(), center.lat(), center.lon()) <= MAX_ORIGIN_KM;
-        });
+        return place;
+    }
+
+    /** Дальше {@link #MAX_ORIGIN_KM} от обоих городов — там, где проект пока не работает. */
+    private boolean tooFar(AddressGeocoder.Place p) {
+        Screens.Origin center = screens.nearestCenter(p.lat(), p.lon());
+        return Haversine.distanceKm(p.lat(), p.lon(), center.lat(), center.lon()) > MAX_ORIGIN_KM;
     }
 
     /**

@@ -276,13 +276,25 @@ class DialogRouterBalanceTest {
     }
 
     @Test
-    @DisplayName("адрес дальше 100 км от обоих городов — как не найденный")
+    @DisplayName("адрес дальше 100 км от обоих городов — проект пока пилотный, шаг тот же")
     void addressTooFar() {
         when(geocoder.geocode(any())).thenReturn(
                 Optional.of(new AddressGeocoder.Place("Невский проспект, 1, Санкт-Петербург", 59.9343, 30.3351)));
         untilOrigin();
         send("Санкт-Петербург, Невский 1");
-        assertNotFound();
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_ORIGIN);
+        assertThat(lastText()).contains("пилотный проект").contains("Москве и Казани");
+        assertOriginQuestionKeyboard();
+    }
+
+    @Test
+    @DisplayName("другой город целиком — тоже про пилот, а не «напиши улицу»")
+    void otherCityOnly() {
+        when(geocoder.geocode(any())).thenReturn(
+                Optional.of(new AddressGeocoder.Place("Новосибирск", 55.0302, 82.9204, true)));
+        untilOrigin();
+        send("Новосибирск");
+        assertThat(lastText()).contains("пилотный проект").contains("расширяться");
     }
 
     @Test
