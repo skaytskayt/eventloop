@@ -238,6 +238,10 @@ public class DialogRouter implements UpdateHandler {
             return;
         }
         AddressGeocoder.Place found = place.get();
+        if (found.coarse()) {
+            max.sendText(chatId, screens.addressTooBroad(found.name()), screens.originKeyboard());
+            return;
+        }
         user.setOrigin(found.name(), round4(found.lat()), round4(found.lon()));
         user.setDialogState(DialogState.READY);
         users.save(user);

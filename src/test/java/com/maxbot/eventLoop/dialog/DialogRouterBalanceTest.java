@@ -286,6 +286,19 @@ class DialogRouterBalanceTest {
     }
 
     @Test
+    @DisplayName("только город — бот просит улицу и дом и остаётся на шаге точки")
+    void cityOnlyAsksForPreciseAddress() {
+        when(geocoder.geocode(any())).thenReturn(
+                Optional.of(new AddressGeocoder.Place("Казань", 55.7963, 49.1088, true)));
+        untilOrigin();
+        send("Казань");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_ORIGIN);
+        assertThat(user.getOriginLat()).isNull();
+        assertThat(lastText()).contains("это весь город").contains("улицу и дом");
+        assertOriginQuestionKeyboard();
+    }
+
+    @Test
     @DisplayName("сбой геокодера — ответ «не нашёл», реплика не теряется")
     void geocoderFailure() {
         when(geocoder.geocode(any())).thenThrow(new IllegalStateException("boom"));

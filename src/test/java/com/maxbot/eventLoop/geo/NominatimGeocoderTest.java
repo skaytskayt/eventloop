@@ -32,6 +32,16 @@ class NominatimGeocoderTest {
                 .contains(new AddressGeocoder.Place("улица Баумана, 7/10, Казань", 55.7934295, 49.1098114));
     }
 
+    @ParameterizedTest(name = "addresstype {0} → только город: {1}")
+    @CsvSource({"city, true", "state, true", "suburb, false", "road, false", "building, false", "highway, false"})
+    @DisplayName("город и регион помечаются как неточные, район, улица и дом — нет")
+    void marksCityAsCoarse(String type, boolean coarse) {
+        String json = "[{\"lat\": \"55.79\", \"lon\": \"49.12\", \"addresstype\": \"" + type
+                + "\", \"display_name\": \"Казань, Татарстан, Россия\"}]";
+        assertThat(NominatimGeocoder.parse(json, "Казань")).get()
+                .extracting(AddressGeocoder.Place::coarse).isEqualTo(coarse);
+    }
+
     @ParameterizedTest(name = "{0}")
     @CsvSource(delimiter = '|', value = {
             "[]",

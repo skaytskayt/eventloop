@@ -39,6 +39,7 @@ class MiniAppControllerMeTest {
         AddressGeocoder geocoder = q -> switch (q) {
             case "Казань, Баумана 10" -> Optional.of(new AddressGeocoder.Place("улица Баумана, 10, Казань", 55.78881, 49.11789));
             case "Самара" -> Optional.of(new AddressGeocoder.Place("Самара", 53.1959, 50.1002));
+            case "Казань" -> Optional.of(new AddressGeocoder.Place("Казань", 55.7963, 49.1088, true));
             default -> Optional.empty();
         };
         controller = new MiniAppController(verifier, mock(MiniAppStore.class), new AdminIds(""), users,
@@ -108,6 +109,16 @@ class MiniAppControllerMeTest {
         assertThat(origin("Нигдевиль", null, null).getStatusCode().value()).isEqualTo(404);
         assertThat(origin("Самара", null, null).getStatusCode().value()).isEqualTo(404);
         assertThat(origin("12345", null, null).getStatusCode().value()).isEqualTo(404);
+        assertThat(u.getOriginLat()).isNull();
+    }
+
+    @Test
+    @DisplayName("смена точки: только город — 422, точка прежняя")
+    void originCityOnly() {
+        AppUser u = userIn(DialogState.READY);
+        when(users.findByMaxUserId(42)).thenReturn(Optional.of(u));
+
+        assertThat(origin("Казань", null, null).getStatusCode().value()).isEqualTo(422);
         assertThat(u.getOriginLat()).isNull();
     }
 

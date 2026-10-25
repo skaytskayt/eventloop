@@ -106,6 +106,10 @@ public class MiniAppController {
                 log.warn("Геокодер упал: {}", e.getClass().getSimpleName());
                 place = Optional.empty();
             }
+            // Целый город вместо улицы — 422: приложение просит уточнить адрес.
+            if (place.isPresent() && place.get().coarse()) {
+                return ResponseEntity.status(422).build();
+            }
             Optional<Screens.Origin> found = place
                     .filter(p -> {
                         Screens.Origin c = screens.nearestCenter(p.lat(), p.lon());

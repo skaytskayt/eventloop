@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +42,13 @@ public class NominatimGeocoder implements AddressGeocoder {
     static final Duration TIMEOUT = Duration.ofSeconds(5);
     /** Политика Nominatim: не чаще 1 rps (как PAUSE_NOMINATIM_MS в tools/feed/build-feed.mjs). */
     static final long MIN_INTERVAL_MS = 1100;
+    /**
+     * addresstype Nominatim, при котором найден целый город или регион.
+     * По place_rank не отличить: у Москвы-субъекта он 8, а у её районов
+     * («Арбат», «Хамовники») 14 — меньше, чем у Казани-города (16).
+     */
+    static final Set<String> COARSE_TYPES = Set.of(
+            "country", "state", "region", "province", "county", "city", "municipality");
     /** Длина колонки origin_name. */
     static final int MAX_NAME = 128;
 
@@ -124,7 +132,9 @@ public class NominatimGeocoder implements AddressGeocoder {
             }
             JsonNode display = first.get("display_name");
             String displayName = display == null || display.isNull() ? null : display.asString();
-            return Optional.of(new Place(shortName(displayName, fallbackName), lat, lon));
+            JsonNode type = first.get("addresstype");
+            boolean coarse = type != null && type.isValueNode() && COARSE_TYPES.contains(type.asString());
+            return Optional.of(new Place(shortName(displayName, fallbackName), lat, lon, coarse));
         } catch (RuntimeException e) {
             // JacksonException непроверяемое, NumberFormatException тоже.
             return Optional.empty();
