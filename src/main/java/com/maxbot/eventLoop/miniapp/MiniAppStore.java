@@ -36,9 +36,12 @@ public class MiniAppStore {
                         SELECT event_id, kind, price_rub, category, updated_at
                         FROM miniapp_reaction
                         WHERE max_user_id = ?
+                          -- купленное до новой анкеты — от прежнего баланса
+                          AND NOT (kind = 'BOUGHT' AND updated_at < COALESCE(
+                                (SELECT form_at FROM app_user WHERE max_user_id = ?), '-infinity'))
                         ORDER BY updated_at, event_id
                         """)
-                .param(maxUserId)
+                .params(maxUserId, maxUserId)
                 .query((rs, n) -> new Reaction(
                         rs.getInt("event_id"),
                         rs.getString("kind"),

@@ -179,8 +179,10 @@ public class DialogRouter implements UpdateHandler {
         max.sendCard(chatId, screens.welcome(), welcomeImage.photos(), screens.welcomeKeyboard(miniApp));
     }
 
+    /** Анкета заново: прежние покупки приложение забывает, баланс будет новым. */
     private void restart(AppUser user, long chatId) {
         user.setDialogState(DialogState.AWAITING_TOTAL);
+        user.setFormAt(java.time.Instant.now());
         users.save(user);
         max.sendText(chatId, screens.askTotal(), null);
     }

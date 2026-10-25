@@ -54,6 +54,10 @@ public class AppUser {
     @Column(name = "origin_lon")
     private Double originLon;
 
+    /** Последнее «Заполнить анкету»; null — анкету заново не начинали. */
+    @Column(name = "form_at")
+    private Instant formAt;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private Instant createdAt;
 
@@ -121,6 +125,14 @@ public class AppUser {
 
     public Double getOriginLon() {
         return originLon;
+    }
+
+    public Instant getFormAt() {
+        return formAt;
+    }
+
+    public void setFormAt(Instant formAt) {
+        this.formAt = formAt;
     }
 
     public void setOrigin(String name, Double lat, Double lon) {

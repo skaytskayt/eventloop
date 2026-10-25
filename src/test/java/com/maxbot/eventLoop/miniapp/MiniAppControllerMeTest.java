@@ -82,6 +82,22 @@ class MiniAppControllerMeTest {
     }
 
     @Test
+    @DisplayName("профиль отдаёт время новой анкеты и названные в ней суммы")
+    void meForm() {
+        AppUser u = userIn(DialogState.READY);
+        u.setCinemaRub(1000);
+        u.setOtherRub(2500);
+        when(users.findByMaxUserId(42)).thenReturn(Optional.of(u));
+        assertThat(controller.me("user42").getBody().formAt()).isNull();
+
+        u.setFormAt(java.time.Instant.ofEpochMilli(1_761_400_000_000L));
+        MiniAppController.Me me = controller.me("user42").getBody();
+        assertThat(me.formAt()).isEqualTo(1_761_400_000_000L);
+        assertThat(me.cinemaRub()).isEqualTo(1000);
+        assertThat(me.otherRub()).isEqualTo(2500);
+    }
+
+    @Test
     @DisplayName("профиль отдаёт точку из бота — после /address приложение берёт свежую")
     void meOrigin() {
         AppUser u = userIn(DialogState.READY);

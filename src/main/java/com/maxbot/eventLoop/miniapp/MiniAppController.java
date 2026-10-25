@@ -133,9 +133,11 @@ public class MiniAppController {
     /**
      * Прошёл ли человек анкету в боте: без неё у приложения нет ни баланса, ни точки.
      * origin — точка из профиля бота (null, если не задана): после /address старая
-     * кнопка несёт прежние координаты, а сервер знает свежие.
+     * кнопка несёт прежние координаты, а сервер знает свежие. formAt — когда
+     * анкету начали заново (мс, null — не начинали): приложение по нему забывает
+     * прежние покупки и берёт суммы cinemaRub/otherRub, названные в анкете.
      */
-    public record Me(boolean registered, OriginResponse origin) {
+    public record Me(boolean registered, OriginResponse origin, Long formAt, int cinemaRub, int otherRub) {
     }
 
     @GetMapping("/api/me")
@@ -152,7 +154,9 @@ public class MiniAppController {
                 .filter(u -> u.getOriginLat() != null && u.getOriginLon() != null)
                 .map(u -> new OriginResponse(u.getOriginName(), u.getOriginLat(), u.getOriginLon()))
                 .orElse(null);
-        return ResponseEntity.ok(new Me(registered, origin));
+        Long formAt = user.map(AppUser::getFormAt).map(java.time.Instant::toEpochMilli).orElse(null);
+        return ResponseEntity.ok(new Me(registered, origin, formAt,
+                user.map(AppUser::getCinemaRub).orElse(0), user.map(AppUser::getOtherRub).orElse(0)));
     }
 
     /**

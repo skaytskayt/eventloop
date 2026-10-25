@@ -135,8 +135,10 @@ class DialogRouterBalanceTest {
     @DisplayName("кнопка «Заполнить анкету» начинает анкету заново")
     void fillFormAsksTotal() {
         send("/start");
+        assertThat(user.getFormAt()).isNull();
         send(Screens.FILL_FORM);
         assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_TOTAL);
+        assertThat(user.getFormAt()).isNotNull();
         assertThat(lastText()).contains("Сколько всего денег на карте?");
     }
 
