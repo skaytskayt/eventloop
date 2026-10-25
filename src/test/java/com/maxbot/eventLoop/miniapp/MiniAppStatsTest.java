@@ -266,7 +266,7 @@ class MiniAppStatsTest {
     @Test
     @DisplayName("пустая база — пустой ответ без исключений")
     void emptyDatabase() {
-        MiniAppStats empty = MiniAppStats.compute(List.of(), List.of(), NOW);
+        MiniAppStats empty = MiniAppStats.compute(List.of(), List.of(), new MiniAppStats.BotUsers(0, 0), NOW);
         assertThat(empty).isEqualTo(new MiniAppStats(
                 new Median(null, 0),
                 new Money(0, 0, null),
@@ -282,7 +282,8 @@ class MiniAppStatsTest {
                 null,
                 List.of(),
                 List.of(),
-                List.of(new CityStat("moscow", 0, 0, 0, 0), new CityStat("kazan", 0, 0, 0, 0))));
+                List.of(new CityStat("moscow", 0, 0, 0, 0), new CityStat("kazan", 0, 0, 0, 0)),
+                new MiniAppStats.BotUsers(0, 0)));
     }
 
     @Test
@@ -291,12 +292,12 @@ class MiniAppStatsTest {
         List<LogRow> log = List.of(
                 row(990100, 1, "VIEW"), row(990100, 1, "LIKE"),
                 row(990100, 1, "CLICK_BUY"), row(990100, 1, "PURCHASE_YES"));
-        MiniAppStats stats = MiniAppStats.compute(log, List.of(buy(990100, 1, 700)), NOW);
+        MiniAppStats stats = MiniAppStats.compute(log, List.of(buy(990100, 1, 700)), new MiniAppStats.BotUsers(1, 1), NOW);
         String json = new ObjectMapper().writeValueAsString(stats);
         assertThat(json).contains(
                 "\"swipesToLike\"", "\"bought\"", "\"likeToBuy\"", "\"active\"", "\"funnel\"",
                 "\"minutesToPurchase\"", "\"returned\"", "\"cardsPerUser\"", "\"topEvents\"",
-                "\"categories\"", "\"cities\"");
+                "\"categories\"", "\"cities\"", "\"botUsers\"");
         assertThat(json).doesNotContain("\"recent\"", "\"userId\"", "990100");
     }
 }

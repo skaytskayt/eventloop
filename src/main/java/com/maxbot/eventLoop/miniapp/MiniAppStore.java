@@ -156,6 +156,13 @@ public class MiniAppStore {
                         rs.getString("city")))
                 .list();
 
-        return MiniAppStats.compute(log, bought, Instant.now());
+        MiniAppStats.BotUsers botUsers = jdbc.sql("""
+                        SELECT count(*) AS total, count(*) FILTER (WHERE dialog_state = 'READY') AS ready
+                        FROM app_user
+                        """)
+                .query((rs, n) -> new MiniAppStats.BotUsers(rs.getLong("total"), rs.getLong("ready")))
+                .single();
+
+        return MiniAppStats.compute(log, bought, botUsers, Instant.now());
     }
 }

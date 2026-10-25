@@ -89,7 +89,7 @@ public class DialogRouter implements UpdateHandler {
     }
 
     private void onStart(long maxUserId, long chatId) {
-        restart(user(maxUserId, chatId), chatId);
+        welcome(user(maxUserId, chatId), chatId);
     }
 
     private void onText(MessageCreatedUpdate update) {
@@ -115,6 +115,10 @@ public class DialogRouter implements UpdateHandler {
                 .findFirst().orElse(null);
 
         if (text.toLowerCase(Locale.ROOT).startsWith("/start")) {
+            welcome(user, chatId);
+            return;
+        }
+        if (text.equals(Screens.FILL_FORM)) {
             restart(user, chatId);
             return;
         }
@@ -160,12 +164,25 @@ public class DialogRouter implements UpdateHandler {
         max.sendText(chatId, screens.askOrigin(), screens.originKeyboard());
     }
 
+    /**
+     * /start только здоровается: анкета, баланс и точка остаются. Заново
+     * анкета начинается кнопкой «Заполнить анкету». Прошедшему анкету рядом
+     * кнопка подборки — чтобы не искать её в истории чата.
+     */
+    private void welcome(AppUser user, long chatId) {
+        var miniApp = user.getDialogState() == DialogState.READY
+                ? screens.miniAppKeyboard(user.getCinemaRub(), user.getOtherRub(),
+                        user.getOriginLat(), user.getOriginLon())
+                : null;
+        // Картинка только в приветствии: дальше идёт разговор про числа,
+        // и иллюстрация к каждому ответу превращается в шум.
+        max.sendCard(chatId, screens.welcome(), welcomeImage.photos(), screens.welcomeKeyboard(miniApp));
+    }
+
     private void restart(AppUser user, long chatId) {
         user.setDialogState(DialogState.AWAITING_TOTAL);
         users.save(user);
-        // Картинка только в приветствии: дальше идёт разговор про числа,
-        // и иллюстрация к каждому ответу превращается в шум.
-        max.sendCard(chatId, screens.welcome(), welcomeImage.photos(), null);
+        max.sendText(chatId, screens.askTotal(), null);
     }
 
     /**

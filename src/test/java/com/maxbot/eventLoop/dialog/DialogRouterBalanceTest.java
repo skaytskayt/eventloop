@@ -111,12 +111,48 @@ class DialogRouterBalanceTest {
         return captor.getValue();
     }
 
+    @SuppressWarnings("unchecked")
+    private java.util.List<java.util.List<ru.max.botapi.model.Button>> lastCardKeyboard() {
+        ArgumentCaptor<java.util.List<java.util.List<ru.max.botapi.model.Button>>> keyboard =
+                ArgumentCaptor.forClass(java.util.List.class);
+        verify(max, org.mockito.Mockito.atLeastOnce())
+                .sendCard(eq(CHAT_ID), any(), any(), keyboard.capture());
+        return keyboard.getValue();
+    }
+
     @Test
-    @DisplayName("/start спрашивает общий баланс и объясняет механику")
-    void startAsksTotal() {
+    @DisplayName("/start объясняет механику и даёт кнопку анкеты, вопрос не задаёт")
+    void startShowsWelcome() {
         send("/start");
+        assertThat(lastCardText()).contains("вправо").doesNotContain("Сколько всего денег на карте?");
+        var keyboard = lastCardKeyboard();
+        assertThat(keyboard).hasSize(1);
+        assertThat(((ru.max.botapi.model.MessageButton) keyboard.getFirst().getFirst()).text())
+                .isEqualTo(Screens.FILL_FORM);
+    }
+
+    @Test
+    @DisplayName("кнопка «Заполнить анкету» начинает анкету заново")
+    void fillFormAsksTotal() {
+        send("/start");
+        send(Screens.FILL_FORM);
         assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_TOTAL);
-        assertThat(lastCardText()).contains("Сколько всего денег на карте?").contains("вправо");
+        assertThat(lastText()).contains("Сколько всего денег на карте?");
+    }
+
+    @Test
+    @DisplayName("/start после анкеты ничего не сбрасывает и даёт кнопку подборки")
+    void startKeepsReadyUser() {
+        send("2000");
+        send("1000");
+        sendLocation(55.79, 49.12);
+        send("/start");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.READY);
+        assertThat(user.getOtherRub()).isEqualTo(1000);
+        assertThat(user.getOriginLat()).isNotNull();
+        var keyboard = lastCardKeyboard();
+        assertThat(keyboard).hasSize(2);
+        assertThat(keyboard.get(1).getFirst()).isInstanceOf(ru.max.botapi.model.OpenAppButton.class);
     }
 
     @Test
@@ -156,6 +192,7 @@ class DialogRouterBalanceTest {
     @DisplayName("общая сумма больше номинала карты не принимается")
     void rejectsTotalAboveNominal() {
         send("/start");
+        send(Screens.FILL_FORM);
         send("6000");
         assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_TOTAL);
         assertThat(lastText()).contains("5000");
@@ -199,6 +236,7 @@ class DialogRouterBalanceTest {
     @DisplayName("мусор вместо числа не двигает разговор")
     void garbageKeepsTheState() {
         send("/start");
+        send(Screens.FILL_FORM);
         send("не помню");
         assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_TOTAL);
         assertThat(lastText()).doesNotContain("мини-приложении");
@@ -338,11 +376,11 @@ class DialogRouterBalanceTest {
     }
 
     @Test
-    @DisplayName("/start на шаге точки начинает заново, геокодер не вызывается")
+    @DisplayName("/start на шаге точки — приветствие, шаг тот же, геокодер не вызывается")
     void startWinsOverGeocoder() {
         untilOrigin();
         send("/start");
-        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_TOTAL);
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_ORIGIN);
         verify(geocoder, org.mockito.Mockito.never()).geocode(any());
     }
 
@@ -406,12 +444,14 @@ class DialogRouterBalanceTest {
     }
 
     @Test
-    @DisplayName("/start начинает заново")
-    void startResetsTheConversation() {
+    @DisplayName("заново начинает кнопка анкеты, а не /start")
+    void fillFormResetsTheConversation() {
         send("/start");
         send("2000");
         send("1000");
         send("/start");
+        assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_ORIGIN);
+        send(Screens.FILL_FORM);
         assertThat(user.getDialogState()).isEqualTo(DialogState.AWAITING_TOTAL);
     }
 

@@ -81,6 +81,20 @@ class MiniAppControllerMeTest {
         assertThat(controller.me("user42").getBody().registered()).isTrue();
     }
 
+    @Test
+    @DisplayName("профиль отдаёт точку из бота — после /address приложение берёт свежую")
+    void meOrigin() {
+        AppUser u = userIn(DialogState.READY);
+        when(users.findByMaxUserId(42)).thenReturn(Optional.of(u));
+        assertThat(controller.me("user42").getBody().origin()).isNull();
+
+        u.setOrigin("улица Баумана, 10, Казань", 55.7888, 49.1179);
+        MiniAppController.OriginResponse o = controller.me("user42").getBody().origin();
+        assertThat(o.name()).isEqualTo("улица Баумана, 10, Казань");
+        assertThat(o.lat()).isEqualTo(55.7888);
+        assertThat(o.lon()).isEqualTo(49.1179);
+    }
+
     private ResponseEntity<MiniAppController.OriginResponse> origin(String address, Double lat, Double lon) {
         return controller.origin("user42", new MiniAppController.OriginRequest(address, lat, lon));
     }

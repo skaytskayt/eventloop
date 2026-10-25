@@ -160,7 +160,7 @@ class ScreensMiniAppTest {
      * Без механики оно превращается в «напиши число» без объяснения зачем.
      */
     @Test
-    @DisplayName("приветствие объясняет механику и задаёт первый вопрос")
+    @DisplayName("приветствие объясняет механику и зовёт к кнопке анкеты")
     void welcomeExplainsHowItWorks() {
         String welcome = screens("test_bot").welcome();
         assertThat(welcome)
@@ -168,7 +168,8 @@ class ScreensMiniAppTest {
                 .contains("Отложить")
                 .contains("Потратить весь баланс")
                 .contains("на кино")
-                .contains("Сколько всего денег на карте?");
+                .contains("Заполнить анкету");
+        assertThat(screens("test_bot").askTotal()).contains("Сколько всего денег на карте?");
     }
 
     @Test

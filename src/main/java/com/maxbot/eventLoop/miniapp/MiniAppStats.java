@@ -27,7 +27,8 @@ public record MiniAppStats(
         Double cardsPerUser,
         List<TopEvent> topEvents,
         List<CategoryStat> categories,
-        List<CityStat> cities) {
+        List<CityStat> cities,
+        BotUsers botUsers) {
 
     public static final ZoneId MOSCOW = ZoneId.of("Europe/Moscow");
 
@@ -54,6 +55,13 @@ public record MiniAppStats(
     public record Activity(long today, long week, long newToday) {
     }
 
+    /**
+     * Люди из app_user: написали боту и прошли ли анкету. Журнал приложения
+     * их не видит, пока они не открыли карточку из MAX.
+     */
+    public record BotUsers(long total, long registered) {
+    }
+
     /** step: OPENED | LIKED | CLICK_BUY | BOUGHT. */
     public record FunnelStep(String step, long users, Double percentOfFirst) {
     }
@@ -71,7 +79,7 @@ public record MiniAppStats(
     private record Pair(long userId, int eventId) {
     }
 
-    public static MiniAppStats compute(List<LogRow> log, List<BoughtRow> bought, Instant now) {
+    public static MiniAppStats compute(List<LogRow> log, List<BoughtRow> bought, BotUsers botUsers, Instant now) {
         return new MiniAppStats(
                 medianViewsBeforeFirstLike(log),
                 boughtTotals(bought),
@@ -83,7 +91,8 @@ public record MiniAppStats(
                 viewsPerUser(log),
                 topByInterest(log, bought, 5),
                 byCategory(log),
-                byCity(log, bought));
+                byCity(log, bought),
+                botUsers);
     }
 
     /** Сколько карточек человек пролистывает, прежде чем найти «своё» мероприятие. */

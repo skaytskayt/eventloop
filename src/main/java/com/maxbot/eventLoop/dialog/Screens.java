@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.List;
 import org.springframework.stereotype.Component;
 import ru.max.botapi.model.Button;
+import ru.max.botapi.model.MessageButton;
 import ru.max.botapi.model.OpenAppButton;
 import ru.max.botapi.model.RequestGeoLocationButton;
 
@@ -40,6 +41,9 @@ public class Screens {
      */
     public static final String STATS_PAYLOAD = "stats";
 
+    /** Кнопка под приветствием: MAX присылает её текст сообщением, по нему анкета и начинается. */
+    public static final String FILL_FORM = "📝 Заполнить анкету";
+
     private final AppProperties properties;
 
     public Screens(AppProperties properties) {
@@ -47,8 +51,8 @@ public class Screens {
     }
 
     /**
-     * Первое сообщение. Объясняет, что дальше будет, и сразу задаёт первый
-     * вопрос: экран без вопроса оставляет человека гадать, чего от него ждут.
+     * Первое сообщение. Объясняет, что дальше будет, и зовёт к кнопке анкеты:
+     * /start ничего не сбрасывает, поэтому вопрос задаётся только по кнопке.
      */
     public String welcome() {
         return """
@@ -62,7 +66,22 @@ public class Screens {
 
                 **Хочешь потратить весь остаток?** Выбери в мини-приложении режим «Потратить весь баланс» — собирай подборку и заменяй отдельные карточки или все сразу.
 
-                Начнём! **Сколько всего денег на карте?** Напиши цифрами, например %d."""
+                Нажми «Заполнить анкету», чтобы начать. Если анкета уже заполнена, просто открывай подборку — всё сохранено.""";
+    }
+
+    /** Под приветствием — кнопка анкеты и, если анкета пройдена, кнопка подборки. */
+    public List<List<Button>> welcomeKeyboard(List<List<Button>> miniApp) {
+        List<List<Button>> rows = new java.util.ArrayList<>();
+        rows.add(List.of(new MessageButton(FILL_FORM)));
+        if (miniApp != null) {
+            rows.addAll(miniApp);
+        }
+        return rows;
+    }
+
+    /** Первый вопрос анкеты. */
+    public String askTotal() {
+        return "Начнём! **Сколько всего денег на карте?** Напиши цифрами, например %d."
                 .formatted(properties.nominalRub());
     }
 

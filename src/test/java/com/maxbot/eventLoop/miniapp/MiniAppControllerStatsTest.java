@@ -35,7 +35,7 @@ class MiniAppControllerStatsTest {
         when(verifier.userId("forged")).thenReturn(OptionalLong.empty());
         when(verifier.userId("user42")).thenReturn(OptionalLong.of(42));
         when(verifier.userId("admin")).thenReturn(OptionalLong.of(777));
-        sample = MiniAppStats.compute(List.of(), List.of(), Instant.now());
+        sample = MiniAppStats.compute(List.of(), List.of(), new MiniAppStats.BotUsers(0, 0), Instant.now());
     }
 
     private MiniAppController controller(String adminIds) {

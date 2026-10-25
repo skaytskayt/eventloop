@@ -130,8 +130,12 @@ public class MiniAppController {
         return Math.round(value * 10000) / 10000.0;
     }
 
-    /** Прошёл ли человек анкету в боте: без неё у приложения нет ни баланса, ни точки. */
-    public record Me(boolean registered) {
+    /**
+     * Прошёл ли человек анкету в боте: без неё у приложения нет ни баланса, ни точки.
+     * origin — точка из профиля бота (null, если не задана): после /address старая
+     * кнопка несёт прежние координаты, а сервер знает свежие.
+     */
+    public record Me(boolean registered, OriginResponse origin) {
     }
 
     @GetMapping("/api/me")
@@ -142,10 +146,13 @@ public class MiniAppController {
             log.debug("Запрос профиля без валидной подписи initData");
             return ResponseEntity.status(401).build();
         }
-        boolean registered = users.findByMaxUserId(userId.getAsLong())
-                .map(u -> u.getDialogState() == DialogState.READY)
-                .orElse(false);
-        return ResponseEntity.ok(new Me(registered));
+        Optional<AppUser> user = users.findByMaxUserId(userId.getAsLong());
+        boolean registered = user.map(u -> u.getDialogState() == DialogState.READY).orElse(false);
+        OriginResponse origin = user
+                .filter(u -> u.getOriginLat() != null && u.getOriginLon() != null)
+                .map(u -> new OriginResponse(u.getOriginName(), u.getOriginLat(), u.getOriginLon()))
+                .orElse(null);
+        return ResponseEntity.ok(new Me(registered, origin));
     }
 
     /**
