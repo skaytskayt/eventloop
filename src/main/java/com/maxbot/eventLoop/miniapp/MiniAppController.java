@@ -217,7 +217,7 @@ public class MiniAppController {
             log.debug("Статистика без валидной подписи initData");
             return ResponseEntity.status(401).build();
         }
-        if (!admins.contains(userId.getAsLong())) {
+        if (!admins.canSeeStats(userId.getAsLong())) {
             log.debug("Статистику запросил не администратор");
             return ResponseEntity.status(403).build();
         }

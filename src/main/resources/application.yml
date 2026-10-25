@@ -69,6 +69,9 @@ eventloop:
   # статистики, и только им /api/stats отдаёт данные. Пустой — статистику не видит
   # никто. Свой id бот сообщает в ответ на /stats.
   admin-max-ids: ${ADMIN_MAX_IDS:}
+  # Демо для экспертов: /stats и экран статистики открыты всем, с подписью, что
+  # в проде доступ только у администратора. В проде — false.
+  stats-public: ${STATS_PUBLIC:true}
 
 management:
   endpoints:

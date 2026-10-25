@@ -45,6 +45,7 @@ services:
       MINIAPP_ORIGINS: ${MINIAPP_ORIGINS:-https://skaytskayt.github.io}
       # MAX user id администраторов через запятую: им доступна статистика (/stats).
       ADMIN_MAX_IDS: ${ADMIN_MAX_IDS:-}
+      STATS_PUBLIC: ${STATS_PUBLIC:-true}
     # При долгом поллинге наружу ничего публиковать не нужно:
     # порт открыт только ради healthcheck и заглядывания в /actuator/health.
     ports:

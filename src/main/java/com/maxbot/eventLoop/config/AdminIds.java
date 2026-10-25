@@ -4,6 +4,7 @@ import java.util.HashSet;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +16,10 @@ import org.springframework.stereotype.Component;
  * MAX user id через запятую). Пустой список — статистику не видит никто: отказ
  * по умолчанию, а не «все администраторы». Значения, которые не являются
  * положительным числом, пропускаются и доступа не дают.
+ *
+ * <p>{@code eventloop.stats-public} (STATS_PUBLIC) открывает статистику всем —
+ * только для показа экспертам, что у проекта есть аналитика. В проде он
+ * выключен, и статистика остаётся у администраторов.
  */
 @Component
 public class AdminIds {
@@ -22,8 +27,16 @@ public class AdminIds {
     private static final Logger log = LoggerFactory.getLogger(AdminIds.class);
 
     private final Set<Long> ids;
+    private final boolean statsPublic;
 
-    public AdminIds(@Value("${eventloop.admin-max-ids:}") String raw) {
+    public AdminIds(String raw) {
+        this(raw, false);
+    }
+
+    @Autowired
+    public AdminIds(@Value("${eventloop.admin-max-ids:}") String raw,
+                    @Value("${eventloop.stats-public:false}") boolean statsPublic) {
+        this.statsPublic = statsPublic;
         Set<Long> parsed = new HashSet<>();
         if (raw != null) {
             for (String part : raw.split(",")) {
@@ -48,6 +61,16 @@ public class AdminIds {
 
     public boolean contains(long maxUserId) {
         return ids.contains(maxUserId);
+    }
+
+    /** Видна ли статистика этому пользователю: администратору или всем в демо-режиме. */
+    public boolean canSeeStats(long maxUserId) {
+        return statsPublic || contains(maxUserId);
+    }
+
+    /** Демо-режим: статистика открыта всем. */
+    public boolean statsPublic() {
+        return statsPublic;
     }
 
     public boolean isEmpty() {

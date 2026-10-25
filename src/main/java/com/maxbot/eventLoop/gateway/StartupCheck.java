@@ -1,5 +1,7 @@
 package com.maxbot.eventLoop.gateway;
 
+import com.maxbot.eventLoop.config.AdminIds;
+import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,9 +31,11 @@ public class StartupCheck implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(StartupCheck.class);
 
     private final MaxBotAPI api;
+    private final AdminIds admins;
 
-    public StartupCheck(MaxBotAPI api) {
+    public StartupCheck(MaxBotAPI api, AdminIds admins) {
         this.api = api;
+        this.admins = admins;
     }
 
     @Override
@@ -61,10 +65,13 @@ public class StartupCheck implements ApplicationRunner {
      * а не только в тексте приветствия.
      */
     private void publishCommands() {
-        // /stats здесь нет намеренно: она админская и чужим не видна.
-        List<BotCommand> commands = List.of(
+        // /stats админская и чужим не видна — в меню она только в демо-режиме.
+        List<BotCommand> commands = new ArrayList<>(List.of(
                 new BotCommand("start", "указать баланс и открыть подборку"),
-                new BotCommand("address", "сменить адрес, от которого считается расстояние"));
+                new BotCommand("address", "сменить адрес, от которого считается расстояние")));
+        if (admins.statsPublic()) {
+            commands.add(new BotCommand("stats", "аналитика проекта (демо для экспертов, в проде — только админ)"));
+        }
         try {
             api.editMyCommands(new BotCommandsPatch(commands)).execute();
             log.info("Команды бота опубликованы: {}",

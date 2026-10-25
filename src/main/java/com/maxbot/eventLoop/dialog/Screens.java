@@ -207,6 +207,12 @@ public class Screens {
                 + "обновляются каждые 3 секунды.";
     }
 
+    /** Подпись к /stats в демо-режиме, когда статистика открыта всем. */
+    public String statsDemoNote() {
+        return "\n\n_Демо: статистика открыта всем, чтобы показать экспертам аналитику проекта. "
+                + "В проде доступ будет только у администратора._";
+    }
+
     /** Кнопка экрана статистики; null, если username бота не задан. */
     public List<List<Button>> statsKeyboard() {
         String bot = properties.botUsername();

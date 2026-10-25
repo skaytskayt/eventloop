@@ -39,4 +39,12 @@ class AdminIdsTest {
         assertThat(admins.contains(-5)).isFalse();
         assertThat(admins.contains(0)).isFalse();
     }
+
+    @Test
+    @DisplayName("статистика: только администраторам, в демо-режиме — всем")
+    void statsAccess() {
+        assertThat(new AdminIds("7").canSeeStats(7)).isTrue();
+        assertThat(new AdminIds("7").canSeeStats(8)).isFalse();
+        assertThat(new AdminIds("", true).canSeeStats(8)).isTrue();
+    }
 }

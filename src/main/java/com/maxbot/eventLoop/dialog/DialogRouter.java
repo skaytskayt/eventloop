@@ -309,24 +309,25 @@ public class DialogRouter implements UpdateHandler {
     }
 
     /**
-     * Скрытая админская команда: состояние диалога не меняет и в меню команд
-     * бота не регистрируется. Не администратору отвечает, что такой команды
+     * Админская команда: состояние диалога не меняет. В демо-режиме
+     * (STATS_PUBLIC) открыта всем и подписана как показ для экспертов. Не администратору отвечает, что такой команды
      * нет: ни о ролях, ни о самой статистике чужим знать незачем. Его id
      * остаётся только в логе сервера — оттуда его берут для ADMIN_MAX_IDS.
      */
     private void sendStats(long maxUserId, long chatId) {
-        if (!admins.contains(maxUserId)) {
+        if (!admins.canSeeStats(maxUserId)) {
             log.info("/stats от не администратора, MAX id {}", maxUserId);
             max.sendText(chatId, screens.unknownCommand(), null);
             return;
         }
+        String title = screens.statsTitle() + (admins.statsPublic() ? screens.statsDemoNote() : "");
         var keyboard = screens.statsKeyboard();
         if (keyboard == null) {
             log.warn("Username бота не задан (eventloop.bot-username) — статистику отправляю без кнопки");
-            max.sendText(chatId, screens.statsTitle() + screens.statsMissing(), null);
+            max.sendText(chatId, title + screens.statsMissing(), null);
             return;
         }
-        max.sendText(chatId, screens.statsTitle(), keyboard);
+        max.sendText(chatId, title, keyboard);
     }
 
     private AppUser user(long maxUserId, long chatId) {
